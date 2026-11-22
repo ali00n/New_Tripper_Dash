@@ -596,6 +596,10 @@ public class MainActivity extends Activity {
             top.setPadding(dp(14), bars.top + dp(8), dp(14), 0);
             sheet.setPadding(dp(16), dp(4), dp(16), dp(10) + bars.bottom);
             bottomInset = bars.bottom;
+            // 22/11: no Android 15 o teclado cobre a tela; sem isto as sugestões da busca ficavam embaixo dele.
+            int ime = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom;
+            imeLift = Math.max(0, ime - bars.bottom);
+            imeTop = bars.top;
             applySheetState(false);
             return insets;
         });
@@ -606,7 +610,7 @@ public class MainActivity extends Activity {
 
     private static final int GRIP_DP = 30;
     private boolean sheetCollapsed;
-    private int sheetFullH, bottomInset;
+    private int sheetFullH, bottomInset, imeLift, imeTop;
     private android.view.View sheetView, sheetContent, sheetNav, mapButtonsView;
     private android.widget.FrameLayout rootView;
 
@@ -627,6 +631,12 @@ public class MainActivity extends Activity {
         android.widget.FrameLayout.LayoutParams lp = (android.widget.FrameLayout.LayoutParams) sheetView.getLayoutParams();
         int barH = dp(GRIP_DP) + dp(4) + dp(10) + bottomInset;
         lp.height = sheetCollapsed ? barH : sheetFullH + bottomInset;
+        // Teclado aberto: a aba sobe e encolhe para caber entre o topo e o teclado (busca + sugestões à vista).
+        lp.bottomMargin = imeLift;
+        if (imeLift > 0) {
+            int room = getResources().getDisplayMetrics().heightPixels + bottomInset - imeLift - imeTop - dp(8);
+            lp.height = Math.min(lp.height, Math.max(dp(160), room));
+        }
         sheetView.setLayoutParams(lp);
         android.view.View map = phoneMap != null ? phoneMap.view : mapView;
         if (map != null) {
