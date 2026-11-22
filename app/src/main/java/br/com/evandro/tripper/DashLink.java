@@ -256,10 +256,20 @@ final class DashLink {
     }
 
     void connectBySpecifier(String ssid, String password) {
+        if (ssid == null || ssid.trim().isEmpty()) {
+            log.line("ERRO: nome do Wi-Fi do painel vazio, não dá para conectar");
+            return;
+        }
+        if (password == null || password.length() < 8) password = "12345678";
         this.ssid = ssid;
         releaseRequest();
-        WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder()
-                .setSsid(ssid).setWpa2Passphrase(password).build();
+        WifiNetworkSpecifier spec;
+        try {
+            spec = new WifiNetworkSpecifier.Builder().setSsid(ssid).setWpa2Passphrase(password).build();
+        } catch (RuntimeException e) {
+            log.line("ERRO: Android recusou o Wi-Fi do painel \"" + ssid + "\": " + e.getMessage());
+            return;
+        }
         NetworkRequest request = new NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -305,6 +315,11 @@ final class DashLink {
     }
 
     private Network openNetwork;
+
+    /** Rede Wi-Fi do painel em uso (para medir o sinal), ou null. */
+    Network dashNetwork() {
+        return openNetwork;
+    }
 
     private synchronized void openSockets(Network network) {
         if (network != null && network.equals(openNetwork) && controlSocket != null) {

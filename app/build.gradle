@@ -6,8 +6,8 @@ android {
         applicationId 'br.com.evandro.tripper'
         minSdk 29
         targetSdk 35
-        versionCode 94
-        versionName '0.94'
+        versionCode 99
+        versionName '0.99'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation 'org.maplibre.gl:android-sdk:13.5.4'
     implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
 android {
     packaging { jniLibs { useLegacyPackaging true } }
@@ -56,4 +57,19 @@ if (System.getenv('COWDOOM') == '1') {
 // DOOM instalado como atualização do app do Evandro (o Google barra instalação nova de fora da loja).
 if (project.hasProperty('doomComoTripper')) {
     android { productFlavors { doom { applicationId 'br.com.evandro.tripper' } } }
+}
+
+// Teste: a edição do Evandro com a MESMA otimização (R8) da pública, assinada com a chave de teste
+// (entra como atualização do app dele, sem instalação nova).
+android {
+    buildTypes {
+        r8teste {
+            initWith debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['debug']
+        }
+    }
 }

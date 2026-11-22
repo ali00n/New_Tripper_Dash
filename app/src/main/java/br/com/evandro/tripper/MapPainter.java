@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
 final class MapPainter {
     private static final int TILE = 256;
     private static final String TILE_URL = "https://tile.openstreetmap.org/%d/%d/%d.png";
-    private static final String USER_AGENT = "CowTripperDash/" + BuildConfig.VERSION_NAME + " (Android)";
+    static final String USER_AGENT = "CowTripperDash/" + BuildConfig.VERSION_NAME + " (Android)";
 
     /** Posição da moto na tela: centro na horizontal, 70% para baixo (mostra mais do caminho à frente). */
     private static final float BIKE_X = 0.5f;
@@ -160,6 +160,12 @@ final class MapPainter {
             } catch (Exception e) {
                 last = e;
             }
+        }
+        // DNS do celular travado (21/11): tenta de novo com o DNS próprio
+        try {
+            return NetFallback.get(address);
+        } catch (Exception e) {
+            if (last == null) last = e;
         }
         throw last != null ? last : new java.io.IOException("sem rede");
     }
@@ -655,6 +661,13 @@ final class MapPainter {
                         break;
                     } catch (Exception e) {
                         last = e;
+                    }
+                }
+                if (data == null) {
+                    try {
+                        data = NetFallback.get(url.toString());
+                    } catch (Exception e) {
+                        if (last == null) last = e;
                     }
                 }
                 if (data == null) throw last != null ? last : new java.io.IOException("sem rede");

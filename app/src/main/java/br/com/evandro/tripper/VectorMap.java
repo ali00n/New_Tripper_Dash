@@ -28,6 +28,9 @@ final class VectorMap {
     /** Sem internet: usa só o que já está guardado (cache + mapa baixado) por este tempo e tenta a rede de novo. */
     private static final long OFFLINE_HOLD_MS = 60_000;
     private volatile boolean offlineFallback;
+    /** Foto que não volta nesse tempo é cancelada. */
+    private static final long STUCK_MS = 5000;
+    private volatile int shotToken;
     /** Intervalo extra entre fotos quando o celular está quente (ThermalGuard). */
     static volatile long extraGapMs = 0;
     /** Moto parada e câmera igual: não tira foto nova (economiza bateria e esquenta menos). */
@@ -78,6 +81,8 @@ final class VectorMap {
             if (running) return;
             try {
                 MapLibre.getInstance(context);
+                // Mesmo cliente de internet do app: com DNS de reserva se o do celular travar.
+                org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(NetFallback.client);
                 Style.Builder style = new Style.Builder().fromJson(MapStyle.json());
                 // Ícones entram DEPOIS de montar: com estilo em JSON o MapLibre 13 tenta pôr as imagens
                 // antes de ter o ponteiro nativo ("invalid native peer").
@@ -142,16 +147,31 @@ final class VectorMap {
             return;
         }
         // pede a foto onde a moto vai estar quando ela ficar pronta
-        double ahead = c[4] * lastLatencyMs / 1000.0;
+        // sem "rota presumida" (teste remoto), a foto sai exatamente onde a moto está
+        double ahead = MotionSmoother.enabled ? c[4] * lastLatencyMs / 1000.0 : 0;
         double rad = Math.toRadians(c[2]);
         double la = c[0] + ahead * Math.cos(rad) / 110_540.0;
         double lo = c[1] + ahead * Math.sin(rad) / (111_320.0 * Math.cos(Math.toRadians(c[0])));
         double[] cam = {la, lo, c[2], c[3]};
         busy = true;
         long t0 = System.currentTimeMillis();
+        final int token = ++shotToken;
+        // 22/11: uma foto presa esperando a internet congelava o mapa para sempre (painel preto a 180 km/h).
+        main.postDelayed(() -> {
+            if (!busy || token != shotToken) return;
+            errors++;
+            lastError = "foto presa por " + STUCK_MS / 1000 + " s";
+            Logger.line("Mapa vetorial: foto presa há " + STUCK_MS / 1000 + " s, cancelando e usando o mapa guardado");
+            try { snapshotter.cancel(); } catch (Throwable ignored) { }
+            shotToken++;
+            busy = false;
+            if (!offlineFallback) goOffline();
+            main.postDelayed(this::next, MIN_GAP_MS);
+        }, STUCK_MS);
         try {
             snapshotter.setCameraPosition(position(cam));
             snapshotter.start(snap -> {
+                if (token != shotToken) return;
                 long dt = System.currentTimeMillis() - t0;
                 lastLatencyMs = (lastLatencyMs * 3 + dt) / 4;
                 last = new Shot(snap.getBitmap(), cam[0], cam[1], cam[2], cam[3], System.currentTimeMillis());
@@ -160,6 +180,7 @@ final class VectorMap {
                 busy = false;
                 main.postDelayed(this::next, Math.max(MIN_GAP_MS, extraGapMs));
             }, err -> {
+                if (token != shotToken) return;
                 errors++;
                 lastError = String.valueOf(err);
                 if (errors <= 5 || errors % 50 == 0) Logger.line("Mapa vetorial: erro na foto " + err);

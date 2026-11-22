@@ -94,7 +94,9 @@ public class DashService extends Service {
                 for (android.net.wifi.ScanResult r : wm.getScanResults()) {
                     if (nowUs - r.timestamp > SCAN_FRESH_MS * 1000L) continue;
                     String found = r.getWifiSsid() != null ? r.getWifiSsid().toString().replace("\"", "") : r.SSID;
-                    if (found == null) continue;
+                    // 22/11 (Realme 12+): rede OCULTA vem com nome vazio; vazio == vazio fazia o app tentar
+                    // conectar numa rede sem nome e o Android derrubava o app.
+                    if (found == null || found.trim().isEmpty()) continue;
                     if (ssid.isEmpty() && found.startsWith("RE_")) {
                         ssid = found;
                         candidateSsid = found;
@@ -130,9 +132,27 @@ public class DashService extends Service {
         float temp = bat == null ? Float.NaN : bat.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) / 10f;
         boolean charging = bat != null && bat.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0;
         Logger.line(String.format(java.util.Locale.ROOT,
-                "Desempenho 1 min: vídeo %.1f q/s (teto %d), quadro p95 %.0f ms máx %.0f ms, GPS maior buraco %.1f s, envio %d erros/%d perdidos, bateria %.1f °C%s",
+                "Desempenho 1 min: vídeo %.1f q/s (teto %d), quadro p95 %.0f ms máx %.0f ms, GPS maior buraco %.1f s, envio %d erros/%d perdidos, bateria %.1f °C%s, %s",
                 r.videoFps, VideoProjector.fpsCap, r.frameP95, r.frameMax, r.gpsGapMax / 1000, r.sendErrors, r.videoDropped,
-                temp, charging ? " carregando" : ""));
+                temp, charging ? " carregando" : "", dashSignal()));
+    }
+
+    /** Força do sinal do Wi-Fi do painel: dBm (perto de -40 = ótimo, abaixo de -75 = fraco) e velocidade do link. */
+    @SuppressWarnings("deprecation")
+    private String dashSignal() {
+        try {
+            android.net.wifi.WifiInfo wi = null;
+            android.net.Network net = link == null ? null : link.dashNetwork();
+            if (net != null) {
+                android.net.NetworkCapabilities nc = getSystemService(android.net.ConnectivityManager.class).getNetworkCapabilities(net);
+                if (nc != null && nc.getTransportInfo() instanceof android.net.wifi.WifiInfo) wi = (android.net.wifi.WifiInfo) nc.getTransportInfo();
+            }
+            if (wi == null || wi.getRssi() <= -127) wi = getSystemService(android.net.wifi.WifiManager.class).getConnectionInfo();
+            if (wi == null || wi.getRssi() <= -127) return "sinal do painel ?";
+            return "sinal do painel " + wi.getRssi() + " dBm, link " + wi.getTxLinkSpeedMbps() + " Mbit/s";
+        } catch (Exception e) {
+            return "sinal do painel ?";
+        }
     }
 
     private boolean autoOfflineDone;
@@ -1048,16 +1068,28 @@ public class DashService extends Service {
             case "conectar":
                 handler.post(() -> link.connectBySpecifier(prefs.getString("ssid", DEFAULT_SSID), prefs.getString("pass", "12345678")));
                 return "pedindo o Wi-Fi do painel\n";
+            case "presumida": {
+                // Teste A/B: liga/desliga suavização + andar pela linha da rota + foto adiantada (o que entrou depois de 19/11).
+                if (args.containsKey("on")) MotionSmoother.enabled = !"0".equals(args.get("on"));
+                String st = "rota presumida " + (MotionSmoother.enabled ? "LIGADA (suaviza, segue a linha, foto adiantada)" : "DESLIGADA (posição crua do GPS, como antes de 19/11)");
+                Logger.line("Teste: " + st);
+                return st + (char) 10;
+            }
             case "videocfg": {
                 if (args.containsKey("kbps")) VideoProjector.bitrate = Integer.parseInt(args.get("kbps")) * 1000;
-                if (args.containsKey("chave")) VideoProjector.keyEveryS = Integer.parseInt(args.get("chave"));
+                if (args.containsKey("chave")) VideoProjector.keyEveryMs = (int) Math.round(Double.parseDouble(args.get("chave")) * 1000);
+                if (args.containsKey("fps")) {
+                    VideoProjector.fps = Integer.parseInt(args.get("fps"));
+                    VideoProjector.fpsCap = VideoProjector.fps;
+                    handler.post(() -> { toggleVideo(); handler.postDelayed(DashService::toggleVideo, 1500); });
+                }
                 if (args.containsKey("pace")) VideoProjector.paceUs = Integer.parseInt(args.get("pace"));
                 if (projector != null) {
                     projector.applyBitrate();
                     projector.requestKeyFrame();
                 }
-                String cfg = "vídeo: " + VideoProjector.bitrate / 1000 + " kbit/s, quadro completo a cada " + VideoProjector.keyEveryS
-                        + " s, espaço entre pacotes " + VideoProjector.paceUs + " µs";
+                String cfg = "vídeo: " + VideoProjector.fps + " q/s, " + VideoProjector.bitrate / 1000 + " kbit/s, quadro completo a cada " + VideoProjector.keyEveryMs
+                        + " ms, espaço entre pacotes " + VideoProjector.paceUs + " µs";
                 Logger.line("Ajuste remoto: " + cfg);
                 return cfg + (char) 10;
             }

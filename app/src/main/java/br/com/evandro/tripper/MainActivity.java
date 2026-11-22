@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashReport.install(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.WHITE));
         requestPermissions(new String[]{
@@ -70,6 +71,8 @@ public class MainActivity extends Activity {
         setContentView(buildUi());
         if (state == null) showIntro(true);
         if (getIntent().getBooleanExtra(EXTRA_MIRROR, false)) askMirror();
+        if (BuildConfig.PUBLICO) checkUpdate();
+        CrashReport.showIfAny(this);
         handleShare(getIntent());
         logView.setText(Logger.history());
         Logger.setListener(line -> ui.post(() -> {
@@ -942,6 +945,36 @@ public class MainActivity extends Activity {
                 box.addView(b);
             }
         }));
+    }
+
+    /** Arquivo com a última versão pública (no GitHub aberto do projeto). */
+    private static final String UPDATE_URL = "https://raw.githubusercontent.com/evandroreis01/CowTripperDash/main/versao.json";
+
+    /** No máximo a cada 12 h: se saiu versão nova, avisa e leva para a página de download. */
+    private void checkUpdate() {
+        SharedPreferences prefs = getSharedPreferences("painel", MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        if (now - prefs.getLong("update-check", 0) < 12 * 3600_000L) return;
+        prefs.edit().putLong("update-check", now).apply();
+        new Thread(() -> {
+            try {
+                org.json.JSONObject v = new org.json.JSONObject(new String(NetFallback.get(UPDATE_URL), java.nio.charset.StandardCharsets.UTF_8));
+                if (v.getInt("versionCode") <= BuildConfig.VERSION_CODE) return;
+                String name = v.optString("versionName"), notes = v.optString("notas"), url = v.optString("url");
+                Logger.line("Atualização: versão " + name + " disponível");
+                ui.post(() -> {
+                    if (isFinishing()) return;
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("Nova versão " + name)
+                            .setMessage(notes.isEmpty() ? "Tem versão nova do Cow Tripper Dash." : notes)
+                            .setPositiveButton("Baixar", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))))
+                            .setNegativeButton("Depois", null)
+                            .show();
+                });
+            } catch (Exception e) {
+                Logger.line("Atualização: não deu para conferir (" + e.getMessage() + ")");
+            }
+        }, "atualizacao").start();
     }
 
     /** Página do Apoia.se do projeto; vazio = botão escondido. */

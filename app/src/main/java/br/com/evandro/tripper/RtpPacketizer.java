@@ -38,6 +38,21 @@ final class RtpPacketizer {
     }
 
     /** Converte um quadro (Annex-B) em pacotes RTP. */
+    /** Hora real do quadro (µs do encoder): o carimbo RTP acompanha o tempo de verdade, mesmo com q/s variando. */
+    private long baseTs = -1, basePtsUs;
+
+    List<byte[]> packetize(byte[] annexB, boolean keyFrame, long ptsUs) {
+        if (ptsUs > 0) {
+            if (baseTs < 0) {
+                baseTs = timestamp;
+                basePtsUs = ptsUs;
+            }
+            timestamp = (baseTs + (ptsUs - basePtsUs) * 9 / 100) & 0xFFFFFFFFL;
+            if (timestamp == 0) timestamp = 1;
+        }
+        return packetize(annexB, keyFrame);
+    }
+
     List<byte[]> packetize(byte[] annexB, boolean keyFrame) {
         List<byte[]> nals = new ArrayList<>();
         for (byte[] nal : splitNals(annexB)) {
@@ -98,7 +113,7 @@ final class RtpPacketizer {
             packets.add(pkt);
             seq = (seq + 1) % 256;
         }
-        if (!packets.isEmpty()) timestamp = ((timestamp + 90000L / fps) & 0xFFFFFFFFL);
+        if (!packets.isEmpty() && baseTs < 0) timestamp = ((timestamp + 90000L / fps) & 0xFFFFFFFFL);
         if (timestamp == 0) timestamp = 1;
         return packets;
     }

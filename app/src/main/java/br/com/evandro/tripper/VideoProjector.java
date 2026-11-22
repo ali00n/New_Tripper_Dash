@@ -21,12 +21,14 @@ final class VideoProjector {
 
     static final int WIDTH = 526;
     static final int HEIGHT = 300;
-    private static final int FPS = 12;
+    /** Quadros por segundo (ajustável pelo remoto, vale ao religar o vídeo). */
+    static volatile int fps = 12;
     /** Teto de quadros por segundo baixado pelo controle de temperatura (ThermalGuard). */
-    static volatile int fpsCap = FPS;
+    static volatile int fpsCap = 12;
     /** Quadro completo a cada 3 s (antes 1 s): menos rajada no Wi-Fi do painel. */
     /** Ajustáveis ao vivo pelo acesso remoto (videocfg) para achar o que o painel aguenta em movimento. */
-    static volatile int keyEveryS = 3;
+    /** Quadro completo a cada (ms). 22/11: 3 s fazia o painel "segurar e soltar" a cada perda; 1 s ficou melhor. */
+    static volatile int keyEveryMs = 1000;
     static volatile int bitrate = 1_000_000;
     /** Espaço entre pacotes do mesmo quadro (µs); 0 = rajada (como era). */
     static volatile int paceUs = 1500;
@@ -63,8 +65,8 @@ final class VideoProjector {
             MediaFormat f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, WIDTH, HEIGHT);
             f.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             f.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
-            f.setInteger(MediaFormat.KEY_FRAME_RATE, FPS);
-            f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, keyEveryS);
+            f.setInteger(MediaFormat.KEY_FRAME_RATE, fps);
+            f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, Math.max(1, keyEveryMs / 1000));
             f.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);
             f.setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel41);
             f.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
@@ -78,13 +80,13 @@ final class VideoProjector {
             socket.setBroadcast(true);
             Logger.line("Vídeo: destino " + target + ":" + VIDEO_PORT);
             socket.setTrafficClass(136);
-            rtp = new RtpPacketizer(FPS);
+            rtp = new RtpPacketizer(fps);
             running = true;
             frames = 0;
             packets = 0;
             new Thread(this::drawLoop, "video-draw").start();
             new Thread(this::drainLoop, "video-send").start();
-            Logger.line("Vídeo ligado: " + WIDTH + "x" + HEIGHT + " @" + FPS + " fps, codec " + codec.getName());
+            Logger.line("Vídeo ligado: " + WIDTH + "x" + HEIGHT + " @" + fps + " fps, codec " + codec.getName());
             return true;
         } catch (Exception e) {
             Logger.line("ERRO ao ligar o vídeo: " + e);
@@ -106,7 +108,7 @@ final class VideoProjector {
 
     private void drawLoop() {
         while (running) {
-            long interval = 1000 / Math.max(4, Math.min(FPS, fpsCap));
+            long interval = 1000 / Math.max(4, Math.min(fps, fpsCap));
             long t0 = System.currentTimeMillis();
             try {
                 Canvas c = surface.lockHardwareCanvas();
@@ -116,7 +118,7 @@ final class VideoProjector {
                     surface.unlockCanvasAndPost(c);
                 }
                 frames++;
-                if (frames % (FPS * Math.max(1, keyEveryS)) == 0) requestKeyFrame();
+                if (frames % Math.max(1, Math.round(fps * keyEveryMs / 1000.0)) == 0) requestKeyFrame();
             } catch (Exception e) {
                 if (running) Logger.line("ERRO ao desenhar: " + e);
             }
@@ -154,7 +156,7 @@ final class VideoProjector {
                 if (key && keyFrames == 1) logSps(data);
                 if (sentFrames < 6) logNals(data, key);
                 sentFrames++;
-                List<byte[]> pkts = rtp.packetize(data, key);
+                List<byte[]> pkts = rtp.packetize(data, key, info.presentationTimeUs);
                 InetAddress dash = InetAddress.getByName(target);
                 int dropped = 0;
                 for (byte[] p : pkts) {
