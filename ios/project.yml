@@ -1,0 +1,29 @@
+name: CowDash
+options:
+  bundleIdPrefix: br.com.cowdash
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  CowDash:
+    type: application
+    platform: iOS
+    sources: [CowDash]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: br.com.cowdash.ios
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Cow Dash"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Para conversar com o painel Tripper Dash da moto pelo Wi-Fi dele."
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+schemes:
+  CowDash:
+    build:
+      targets:
+        CowDash: all

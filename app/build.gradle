@@ -1,0 +1,59 @@
+apply plugin: "com.android.application"
+android {
+    namespace 'br.com.evandro.tripper'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'br.com.evandro.tripper'
+        minSdk 29
+        targetSdk 35
+        versionCode 94
+        versionName '0.94'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+android {
+    defaultConfig { ndk { abiFilters 'arm64-v8a' } }
+}
+dependencies {
+    implementation 'org.maplibre.gl:android-sdk:13.5.4'
+    implementation 'com.google.zxing:core:3.5.3'
+}
+android {
+    packaging { jniLibs { useLegacyPackaging true } }
+}
+
+// Duas edições: "evandro" (a dele: acesso remoto, estresse, chave de teste) e "publico" (Cow Dash distribuído).
+def chave = new Properties()
+def chaveArq = rootProject.file('chave/keystore.properties')
+if (chaveArq.exists()) chaveArq.withInputStream { chave.load(it) }
+android {
+    buildFeatures { buildConfig true }
+    flavorDimensions 'edicao'
+    productFlavors {
+        evandro { dimension 'edicao'; buildConfigField 'boolean', 'PUBLICO', 'false'; buildConfigField 'boolean', 'DOOM', 'false' }
+        publico { dimension 'edicao'; applicationId 'br.com.cowdash.app'; buildConfigField 'boolean', 'PUBLICO', 'true'; buildConfigField 'boolean', 'DOOM', 'false' }
+        // Só para vídeo: DOOM (shareware) no painel. O motor nativo é compilado no GitHub (COWDOOM=1).
+        doom { dimension 'edicao'; applicationId 'br.com.evandro.cowdoom'; buildConfigField 'boolean', 'PUBLICO', 'false'; buildConfigField 'boolean', 'DOOM', 'true' }
+    }
+    signingConfigs {
+        release {
+            if (chaveArq.exists()) {
+                storeFile file(chave['storeFile'])
+                storePassword chave['storePassword']
+                keyAlias chave['keyAlias']
+                keyPassword chave['keyPassword']
+            }
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' } }
+    lint { checkReleaseBuilds false; abortOnError false }
+}
+
+if (System.getenv('COWDOOM') == '1') {
+    android { externalNativeBuild { cmake { path 'src/doom/cpp/CMakeLists.txt' } } }
+}
+
+// DOOM instalado como atualização do app do Evandro (o Google barra instalação nova de fora da loja).
+if (project.hasProperty('doomComoTripper')) {
+    android { productFlavors { doom { applicationId 'br.com.evandro.tripper' } } }
+}

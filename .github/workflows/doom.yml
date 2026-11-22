@@ -1,0 +1,61 @@
+name: build-doom
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'app/src/doom/**'
+      - 'app/src/main/java/br/com/evandro/tripper/Doom*.java'
+      - 'ferramentas/doom_sources.py'
+      - '.github/workflows/doom.yml'
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Motor do DOOM (doomgeneric, GPL)
+        run: |
+          git clone --depth 1 https://github.com/ozkl/doomgeneric.git app/src/doom/cpp/doomgeneric
+          git -C app/src/doom/cpp/doomgeneric log -1 --format='doomgeneric %H %cd'
+          python3 ferramentas/doom_sources.py app/src/doom/cpp/doomgeneric/doomgeneric/Makefile > app/src/doom/cpp/sources.cmake
+          cat app/src/doom/cpp/sources.cmake
+          grep -n "RESX\|RESY" app/src/doom/cpp/doomgeneric/doomgeneric/doomgeneric.h || true
+          grep -n "KEY_FIRE\|KEY_USE" app/src/doom/cpp/doomgeneric/doomgeneric/doomkeys.h || true
+
+      - name: DOOM shareware oficial v1.9 (doom19s, idgames)
+        run: |
+          sudo apt-get install -y lhasa >/dev/null
+          for u in \
+            https://www.quaddicted.com/files/idgames/idstuff/doom/doom19s.zip \
+            https://youfailit.net/pub/idgames/idstuff/doom/doom19s.zip \
+            https://ftpmirror1.infania.net/pub/idgames/idstuff/doom/doom19s.zip; do
+            curl -fsSL -o /tmp/doom19s.zip "$u" && echo "baixado de $u" && break
+          done
+          mkdir -p /tmp/sw && cd /tmp/sw && unzip -o -q /tmp/doom19s.zip && ls -la
+          if ! find . -iname 'doom1.wad' | grep -q .; then
+            cat $(ls | grep -i '^dooms_19\.[12]$' | sort) > dooms.lha
+            file dooms.lha || true
+            7z x -y dooms.lha || lha xf dooms.lha || true
+            ls -la
+          fi
+          WAD=$(find . -iname 'doom1.wad' | head -1)
+          ls -la "$WAD"; md5sum "$WAD"
+          mkdir -p "$GITHUB_WORKSPACE/app/src/doom/assets"
+          cp "$WAD" "$GITHUB_WORKSPACE/app/src/doom/assets/doom1.wad"
+
+      - name: Chave de teste fixa (permite atualizar o app sem desinstalar)
+        run: mkdir -p ~/.android && cp ferramentas/doom-debug.p12 ~/.android/debug.keystore
+
+      - name: Compilar
+        env:
+          COWDOOM: '1'
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleDoomDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cow-doom
+          path: app/build/outputs/apk/doom/debug/*.apk

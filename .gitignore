@@ -1,0 +1,25 @@
+# segredos: nunca no repositório
+chave/
+*.jks
+*.keystore
+keystore.properties
+app/src/evandro/res/raw/
+segredos/
+# builds e entregas
+build/
+app/build/
+.gradle/
+local.properties
+entregas/
+*.apk
+*.ipa
+ios/build/
+ios/Payload/
+ios/*.xcodeproj/
+__pycache__/
+
+# DOOM: baixados no GitHub Actions
+app/src/doom/cpp/doomgeneric/
+app/src/doom/cpp/sources.cmake
+app/src/doom/assets/
+app/src/doom/jniLibs/

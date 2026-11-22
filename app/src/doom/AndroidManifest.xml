@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Edição só para vídeo: sem leitura de notificações (o Google barra app de fora da loja que pede isso). -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" tools:node="remove"/>
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" tools:node="remove"/>
+    <application android:label="Cow DOOM" tools:replace="android:label">
+        <service android:name="br.com.evandro.tripper.NavListener" tools:node="remove"/>
+        <activity android:name="br.com.evandro.tripper.DoomActivity" android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"/>
+    </application>
+</manifest>
