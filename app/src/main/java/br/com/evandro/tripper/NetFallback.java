@@ -29,19 +29,26 @@ final class NetFallback {
     private static final OkHttpClient doh = new OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).build();
 
+    /** 22/11: com 2 s o mapa vetorial ficou 4 h sem foto (DNS lento, mas respondendo). */
+    private static final int SYSTEM_TIMEOUT_S = 4;
+    private static final char NL = (char) 10;
+    private static volatile String lastDohError = "";
+    private static volatile int dohErrors;
+    static volatile android.content.Context appContext;
+
     private static final java.util.concurrent.ExecutorService lookups = java.util.concurrent.Executors.newCachedThreadPool();
 
     /** DNS do sistema com prazo: travado, ele demorava dezenas de segundos para desistir. */
     private static List<InetAddress> systemLookup(String host) throws UnknownHostException {
         java.util.concurrent.Future<List<InetAddress>> f = lookups.submit(() -> Dns.SYSTEM.lookup(host));
         try {
-            return f.get(2, TimeUnit.SECONDS);
+            return f.get(SYSTEM_TIMEOUT_S, TimeUnit.SECONDS);
         } catch (java.util.concurrent.ExecutionException e) {
             if (e.getCause() instanceof UnknownHostException) throw (UnknownHostException) e.getCause();
             throw new UnknownHostException(host);
         } catch (Exception e) {
             f.cancel(true);
-            throw new UnknownHostException(host + " (DNS do celular sem resposta em 2 s)");
+            throw new UnknownHostException(host + " (DNS do celular sem resposta em " + SYSTEM_TIMEOUT_S + " s)");
         }
     }
 
@@ -49,8 +56,9 @@ final class NetFallback {
         try {
             return systemLookup(host);
         } catch (UnknownHostException e) {
-            List<InetAddress> found = resolveByHttps(host);
-            if (found.isEmpty()) throw e;
+            List<InetAddress> found = resolveByNetworks(host);
+            if (found.isEmpty()) found = resolveByHttps(host);
+            if (found.isEmpty()) throw new UnknownHostException(e.getMessage() + "; DNS próprio: " + lastDohError);
             if (!warned) {
                 warned = true;
                 Logger.line("Rede: o DNS do celular falhou, usando DNS próprio (" + host + ")");
@@ -99,11 +107,59 @@ final class NetFallback {
                     }
                 }
                 if (!out.isEmpty()) break;
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                lastDohError = server.substring(8, server.indexOf('/', 8)) + " " + ex;
+                if (++dohErrors <= 5 || dohErrors % 100 == 0) Logger.line("Rede: DNS próprio falhou (" + lastDohError + ")");
             }
         }
         if (!out.isEmpty()) cache.put(host, new Object[]{System.currentTimeMillis(), out});
         return out;
+    }
+
+    /** Pergunta o endereço a cada rede com internet (4G e Wi-Fi), com prazo; uma delas costuma responder. */
+    private static List<InetAddress> resolveByNetworks(String host) {
+        List<InetAddress> out = new ArrayList<>();
+        android.content.Context c = appContext;
+        if (c == null) return out;
+        try {
+            android.net.ConnectivityManager cm = c.getSystemService(android.net.ConnectivityManager.class);
+            for (android.net.Network n : cm.getAllNetworks()) {
+                android.net.NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                if (nc == null || !nc.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
+                java.util.concurrent.Future<InetAddress[]> f = lookups.submit(() -> n.getAllByName(host));
+                try {
+                    for (InetAddress a : f.get(3, TimeUnit.SECONDS)) out.add(a);
+                } catch (Exception e) {
+                    f.cancel(true);
+                }
+                if (!out.isEmpty()) break;
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    /** Teste remoto: o que cada caminho de DNS responde agora para o host. */
+    static String diagnose(String host) {
+        StringBuilder sb = new StringBuilder();
+        long t = System.currentTimeMillis();
+        try {
+            sb.append("sistema: ").append(systemLookup(host));
+        } catch (Exception e) {
+            sb.append("sistema: falhou ").append(e.getMessage());
+        }
+        sb.append(" (").append(System.currentTimeMillis() - t).append(" ms)").append(NL);
+        t = System.currentTimeMillis();
+        sb.append("por rede: ").append(resolveByNetworks(host)).append(" (").append(System.currentTimeMillis() - t).append(" ms)").append(NL);
+        cache.remove(host);
+        t = System.currentTimeMillis();
+        sb.append("DNS próprio: ").append(resolveByHttps(host)).append(" (").append(System.currentTimeMillis() - t).append(" ms) último erro: ").append(lastDohError).append(NL);
+        try {
+            sb.append("baixar: ").append(get("https://" + host + "/").length).append(" bytes").append(NL);
+        } catch (Exception e) {
+            sb.append("baixar: ").append(e).append(NL);
+        }
+        return sb.toString();
     }
 
     private static byte[] ipv4(String s) {

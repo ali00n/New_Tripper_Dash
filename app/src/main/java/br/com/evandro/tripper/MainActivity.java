@@ -397,12 +397,12 @@ public class MainActivity extends Activity {
     }
 
     private void refreshStatus() {
-        String n = notificationAccess() ? "✔ leitura do Maps liberada" : "✖ falta liberar a leitura do Maps";
+        String n = BuildConfig.PUBLICO ? "" : notificationAccess() ? "✔ leitura do Maps liberada" : "✖ falta liberar a leitura do Maps";
         String b = batteryFree() ? "✔ bateria liberada" : "✖ falta liberar a bateria";
         boolean always = checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
         String g = always ? "✔ localização o tempo todo" : "✖ falta localização \"o tempo todo\" (mapa com tela apagada)";
         String p = DashService.isAuthenticated() ? "✔ painel conectado" : "… painel desconectado";
-        if (status != null) status.setText(n + "\n" + b + "\n" + g + "\n" + p);
+        if (status != null) status.setText((n.isEmpty() ? "" : n + "\n") + b + "\n" + g + "\n" + p);
         if (tripRec != null) {
             String t = DashService.tripStatus();
             tripRec.setText(t == null ? "" : t);
@@ -815,10 +815,11 @@ public class MainActivity extends Activity {
             p.addView(row(button("Rodar teste", v -> Logger.line("Estresse: " + DashService.stressTest().trim()))));
         }
         p.addView(section("Permissões"));
-        p.addView(row(
-                button("Leitura do Maps", v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))),
-                button("Bateria", v -> startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:" + getPackageName()))))));
+        Button battery = button("Bateria", v -> startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:" + getPackageName()))));
+        // Pública: sem leitor de notificações (ver src/publico/AndroidManifest.xml).
+        p.addView(BuildConfig.PUBLICO ? row(battery)
+                : row(button("Leitura do Maps", v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))), battery));
         p.addView(row(
                 button("Localização sempre", v -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:" + getPackageName())))),

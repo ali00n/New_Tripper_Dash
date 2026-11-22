@@ -121,15 +121,28 @@ final class OfflineMaps {
     }
 
     /** Baixa (ou continua baixando) a área; o progresso sai no log e em progress(). */
+    /**
+     * Estilo publicado na internet para o download. 22/11: com o estilo em file:// o download ficava
+     * em 0% para sempre (o baixador do MapLibre só busca recursos pela rede). É o mesmo MapStyle.json().
+     */
+    static final String REMOTE_STYLE = "https://raw.githubusercontent.com/evandroreis01/CowTripperDash/main/mapa/estilo.json";
+
     static void download(Context context, Area area, java.util.function.Consumer<String> onProgress) {
+        download(context, area, REMOTE_STYLE, onProgress);
+    }
+
+    static void download(Context context, Area area, String style, java.util.function.Consumer<String> onProgress) {
         Context app = context.getApplicationContext();
         main.post(() -> {
             try {
                 MapLibre.getInstance(app);
                 OfflineManager om = OfflineManager.getInstance(app);
                 om.setOfflineMapboxTileCountLimit(Long.MAX_VALUE);
+                String styleUrl = style == null || style.isEmpty() ? styleUrl(app) : style;
+                removeUnfinished(om, area);
                 org.maplibre.android.offline.OfflineGeometryRegionDefinition def =
-                        new org.maplibre.android.offline.OfflineGeometryRegionDefinition(styleUrl(app), area.geometry(), 0, area.maxZoom, 1.5f, false);
+                        new org.maplibre.android.offline.OfflineGeometryRegionDefinition(styleUrl, area.geometry(), 0, area.maxZoom, 1.5f, false);
+                Logger.line("Mapa sem internet: estilo " + styleUrl);
                 om.createOfflineRegion(def, area.id.getBytes(StandardCharsets.UTF_8), new OfflineManager.CreateOfflineRegionCallback() {
                     @Override
                     public void onCreate(OfflineRegion region) {
@@ -141,12 +154,17 @@ final class OfflineMaps {
                                 long req = Math.max(1, s.getRequiredResourceCount());
                                 int pct = (int) (100 * s.getCompletedResourceCount() / req);
                                 String msg = area.name + " (" + area.id + "): " + (s.isComplete() ? "pronto, " : pct + "%, ")
-                                        + (s.getCompletedResourceSize() / (1024 * 1024)) + " MB";
+                                        + (s.getCompletedResourceSize() / (1024 * 1024)) + " MB ("
+                                        + s.getCompletedResourceCount() + " de " + s.getRequiredResourceCount()
+                                        + (s.isRequiredResourceCountPrecise() ? "" : "+") + " pedaços)";
                                 progress = msg;
                                 if (onProgress != null) onProgress.accept(msg);
                                 if (s.isComplete()) {
                                     region.setDownloadState(OfflineRegion.STATE_INACTIVE);
-                                    app.getSharedPreferences("painel", Context.MODE_PRIVATE).edit().putBoolean("offline-" + area.id, true).apply();
+                                    // 22/11: erro 404 no estilo terminava "pronto, 0 MB" e marcava como baixado para sempre.
+                                    boolean real = s.getCompletedResourceCount() > 100;
+                                    app.getSharedPreferences("painel", Context.MODE_PRIVATE).edit().putBoolean("offline-" + area.id, real).apply();
+                                    if (!real) { msg = area.name + ": download falhou (" + s.getCompletedResourceCount() + " pedaços), tenta de novo no Wi-Fi"; progress = msg; }
                                     Logger.line("Mapa sem internet: " + msg);
                                 } else if (System.currentTimeMillis() - lastLog > 10_000) {
                                     lastLog = System.currentTimeMillis();
@@ -178,6 +196,36 @@ final class OfflineMaps {
                 Logger.line("Mapa sem internet: falhou " + t);
                 if (onProgress != null) onProgress.accept("Erro: " + t.getMessage());
             }
+        });
+    }
+
+    /** Tentativas antigas que nunca terminaram (as de 0% em file://) saem do banco antes de começar de novo. */
+    private static void removeUnfinished(OfflineManager om, Area area) {
+        om.listOfflineRegions(new OfflineManager.ListOfflineRegionsCallback() {
+            @Override
+            public void onList(OfflineRegion[] regions) {
+                if (regions == null) return;
+                for (OfflineRegion r : regions) {
+                    if (!area.id.equals(new String(r.getMetadata(), StandardCharsets.UTF_8))) continue;
+                    r.getStatus(new OfflineRegion.OfflineRegionStatusCallback() {
+                        @Override
+                        public void onStatus(OfflineRegionStatus st) {
+                            if (st.isComplete()) return;
+                            r.setDownloadState(OfflineRegion.STATE_INACTIVE);
+                            r.delete(new OfflineRegion.OfflineRegionDeleteCallback() {
+                                @Override public void onDelete() { Logger.line("Mapa sem internet: tentativa antiga de " + area.name + " removida"); }
+                                @Override public void onError(String e) { }
+                            });
+                        }
+
+                        @Override
+                        public void onError(String e) { }
+                    });
+                }
+            }
+
+            @Override
+            public void onError(String e) { }
         });
     }
 

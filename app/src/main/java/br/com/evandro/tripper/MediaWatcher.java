@@ -52,6 +52,7 @@ final class MediaWatcher {
     };
 
     void start() {
+        if (BuildConfig.PUBLICO) return; // pública sem leitor de notificações: sem música no painel
         try {
             MediaSessionManager msm = context.getSystemService(MediaSessionManager.class);
             ComponentName me = new ComponentName(context, NavListener.class);

@@ -807,6 +807,7 @@ public class DashService extends Service {
 
     @Override
     public void onCreate() {
+        NetFallback.appContext = getApplicationContext();
         super.onCreate();
         Communities.loadSetting(this);
         current = this;
@@ -1014,11 +1015,16 @@ public class DashService extends Service {
                 String id = args.getOrDefault("uf", "RJ").toUpperCase(java.util.Locale.ROOT);
                 for (OfflineMaps.Area a : OfflineMaps.areas(this))
                     if (a.id.equals(id)) {
-                        OfflineMaps.download(this, a, null);
+                        String estilo = args.get("estilo");
+                        OfflineMaps.download(this, a, estilo == null ? OfflineMaps.REMOTE_STYLE : ("local".equals(estilo) ? "" : estilo), null);
                         return "baixando " + a.name + " (progresso no log)\n";
                     }
                 return "área desconhecida\n";
             }
+            case "dnsteste":
+                return NetFallback.diagnose(args.getOrDefault("host", "tiles.openfreemap.org"));
+            case "estilo":
+                return MapStyle.json();
             case "offline-status":
                 return OfflineMaps.progress() + "\n";
             case "sem-internet":

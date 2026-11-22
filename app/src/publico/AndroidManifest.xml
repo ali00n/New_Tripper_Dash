@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 22/11: edição pública SEM leitor de notificações. O Google (proteção contra fraude, piloto no Brasil)
+     bloqueia a instalação fora da loja de app que pede essa permissão. Perde só música/capa no painel. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <service android:name=".NavListener" tools:node="remove"/>
+    </application>
+</manifest>
