@@ -244,7 +244,7 @@ public class DashService extends Service {
 
     /** Resumo para a tela inicial do app. */
     static final class HomeInfo {
-        boolean connected, digital, recording;
+        boolean connected, digital, recording, serviceOn;
         NavState nav;
         String dest;
         double tripKm;
@@ -255,6 +255,7 @@ public class DashService extends Service {
         HomeInfo h = new HomeInfo();
         DashService s = current;
         if (s == null) return h;
+        h.serviceOn = true;
         h.connected = s.link.isAuthenticated();
         h.digital = s.dashDigital;
         h.nav = s.navActive ? s.navState : null;

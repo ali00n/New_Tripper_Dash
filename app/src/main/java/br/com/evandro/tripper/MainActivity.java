@@ -517,6 +517,13 @@ public class MainActivity extends Activity {
         statusPill.setPadding(dp(12), dp(8), dp(12), dp(8));
         LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-2, -2);
         pl.leftMargin = dp(10);
+        statusPill.setOnClickListener(v -> ligarComAMoto());
+        statusPill.setOnLongClickListener(v -> {
+            if (!DashService.homeInfo().serviceOn) return false;
+            DashService.stop(this);
+            android.widget.Toast.makeText(this, "Painel desligado", android.widget.Toast.LENGTH_SHORT).show();
+            return true;
+        });
         top.addView(statusPill, pl);
         root.addView(top, new android.widget.FrameLayout.LayoutParams(-1, -2));
 
@@ -861,11 +868,37 @@ public class MainActivity extends Activity {
         return scroll;
     }
 
+    /** Botão "Ligar com a moto": liga o serviço e conecta no Wi-Fi do painel (RE_...) sozinho. */
+    private void ligarComAMoto() {
+        DashService.HomeInfo h = DashService.homeInfo();
+        if (h.connected) {
+            android.widget.Toast.makeText(this, "Painel conectado. Segure o botão para desligar.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (h.serviceOn) {
+            android.widget.Toast.makeText(this, "Já estou procurando o painel. Ligue a moto.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        SharedPreferences prefs = getSharedPreferences("painel", MODE_PRIVATE);
+        String ssid = prefs.getString("ssid", DashService.DEFAULT_SSID);
+        if (ssid.isEmpty()) DashService.startIdle(this); // acha o RE_... sozinho
+        else DashService.start(this, ssid, prefs.getString("pass", "12345678"));
+        android.widget.Toast.makeText(this, "Procurando o painel… ligue a moto.", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     /** Atualiza mapa, curva, estado e cartões da tela inicial. */
     private void refreshHome() {
         DashService.HomeInfo h = DashService.homeInfo();
-        statusPill.setText(h.connected ? (h.digital ? "● Painel · digital" : "● Painel · analógico") : "○ Painel desligado");
-        statusPill.setTextColor(h.connected ? Color.rgb(61, 220, 132) : Color.rgb(214, 214, 214));
+        if (h.connected) {
+            statusPill.setText(h.digital ? "● Painel · digital" : "● Painel · analógico");
+            statusPill.setTextColor(Color.rgb(61, 220, 132));
+        } else if (h.serviceOn) {
+            statusPill.setText("◌ Procurando painel…");
+            statusPill.setTextColor(Color.rgb(255, 193, 7));
+        } else {
+            statusPill.setText("⏻ Ligar com a moto");
+            statusPill.setTextColor(Color.WHITE);
+        }
         if (h.nav != null) {
             NavState n = h.nav;
             turnDist.setText(n.metersToTurn >= 1000 ? String.format(java.util.Locale.ROOT, "%.1f km", n.metersToTurn / 1000.0) : n.metersToTurn + " m");
