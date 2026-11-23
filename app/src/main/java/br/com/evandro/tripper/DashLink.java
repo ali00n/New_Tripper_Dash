@@ -367,7 +367,7 @@ final class DashLink {
     private void sendOpeningBurst() {
         Calendar c = Calendar.getInstance();
         String name = android.provider.Settings.Global.getString(context.getContentResolver(), "device_name");
-        if (name == null || name.trim().isEmpty()) name = BuildConfig.PUBLICO ? "Cow Tripper Dash" : "Tripper do Evandro";
+        if (name == null || name.trim().isEmpty()) name = BuildConfig.PUBLICO ? "New Tripper Dash" : "Tripper do Evandro";
         log.line("Apresentando ao painel como: " + name.trim());
         List<List<Tlv>> burst = DashProtocol.openingBurst(name.trim(),
                 c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), c.get(Calendar.SECOND));

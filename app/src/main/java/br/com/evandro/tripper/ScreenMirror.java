@@ -21,7 +21,7 @@ import android.view.WindowManager;
 import java.nio.ByteBuffer;
 
 /**
- * Espelha a tela do celular (o Google Maps) em baixa resolução e entrega
+ * Espelha a tela do celular (o Waze) em baixa resolução e entrega
  * a faixa do meio, no formato do painel (526x300), para o projetor de vídeo.
  */
 final class ScreenMirror {

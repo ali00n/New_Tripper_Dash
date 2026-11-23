@@ -33,7 +33,7 @@ final class CrashReport {
             try (FileOutputStream f = new FileOutputStream(out)) {
                 StringWriter sw = new StringWriter();
                 error.printStackTrace(new PrintWriter(sw));
-                String text = "Cow Tripper Dash " + BuildConfig.VERSION_NAME + (BuildConfig.PUBLICO ? "" : " (dev)")
+                String text = "New Tripper Dash " + BuildConfig.VERSION_NAME + (BuildConfig.PUBLICO ? "" : " (dev)")
                         + "\nCelular: " + Build.MANUFACTURER + " " + Build.MODEL + ", Android " + Build.VERSION.RELEASE
                         + " (API " + Build.VERSION.SDK_INT + ")\nThread: " + thread.getName() + "\n\n" + sw;
                 f.write(text.getBytes(StandardCharsets.UTF_8));
@@ -56,7 +56,7 @@ final class CrashReport {
         Logger.line("App tinha fechado sozinho: " + text.split("\n", 6)[Math.min(4, text.split("\n").length - 1)]);
         new AlertDialog.Builder(activity)
                 .setTitle("O app fechou sozinho da última vez")
-                .setMessage("Ajude a corrigir: envie este erro pelo Instagram @mimosa450cc.\n\n" + text.substring(0, Math.min(700, text.length())))
+                .setMessage("Ajude a corrigir: envie este erro ao desenvolvedor.\n\n" + text.substring(0, Math.min(700, text.length())))
                 .setPositiveButton("Enviar", (d, w) -> activity.startActivity(Intent.createChooser(
                         new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Enviar erro")))
                 .setNeutralButton("Copiar", (d, w) -> {

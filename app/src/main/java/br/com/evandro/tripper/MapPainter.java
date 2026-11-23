@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
 final class MapPainter {
     private static final int TILE = 256;
     private static final String TILE_URL = "https://tile.openstreetmap.org/%d/%d/%d.png";
-    static final String USER_AGENT = "CowTripperDash/" + BuildConfig.VERSION_NAME + " (Android)";
+    static final String USER_AGENT = "NewTripperDash/" + BuildConfig.VERSION_NAME + " (Android)";
 
     /** Posição da moto na tela: centro na horizontal, 70% para baixo (mostra mais do caminho à frente). */
     private static final float BIKE_X = 0.5f;
@@ -72,14 +72,15 @@ final class MapPainter {
     private final Path arrow = new Path();
 
     private volatile Bitmap marker;
-    /** Estilo do ícone sem imagem própria: "vaca" ou "seta". */
-    private volatile String style = "vaca";
+    /** Estilo do ícone sem imagem própria: "moto" ou "seta". */
+    private volatile String style = "moto";
     private final android.content.SharedPreferences prefs;
     private final File markerFile;
 
     /** Recarrega o ícone escolhido pelo Evandro (files/icone.png); sem arquivo, volta a seta. */
     void reloadMarker() {
-        style = prefs.getString("icone", "vaca");
+        style = prefs.getString("icone", "moto");
+        if ("vaca".equals(style)) style = "moto";
         Bitmap b = markerFile.exists() ? BitmapFactory.decodeFile(markerFile.getPath()) : null;
         if (b != null) {
             int max = 56;
@@ -188,8 +189,6 @@ final class MapPainter {
         cm = context.getSystemService(android.net.ConnectivityManager.class);
         diskDir = new File(context.getCacheDir(), "tiles-osm");
         markerFile = new File(context.getFilesDir(), "icone.png");
-        communities.load(context);
-        cameras.load(context);
         prefs = context.getSharedPreferences("painel", Context.MODE_PRIVATE);
         reloadMarker();
         useVector = prefs.getBoolean("vetorial", true);
@@ -282,7 +281,7 @@ final class MapPainter {
     }
 
     final MotionSmoother smoother = new MotionSmoother();
-    /** Com rota: a vaca anda pela linha da rota (vira a esquina junto). */
+    /** Com rota: a moto anda pela linha da rota (vira a esquina junto). */
     final RouteFollower follower = new RouteFollower();
     /** Troca entre seguir a rota e o GPS livre: a diferença some em ~0,5 s em vez de pular. */
     private double blendLat, blendLon, blendBrg;
@@ -426,40 +425,15 @@ final class MapPainter {
                 c.drawBitmap(b, left, top, tilePaint);
             }
         }
-        List<Communities.Area> nearby = Communities.shown ? communities.near(lat, lon, 0.02) : java.util.Collections.emptyList();
-        for (Communities.Area a : nearby) {
-            Path p = new Path();
-            for (double[] ring : a.rings) {
-                for (int i = 0; i < ring.length; i += 2) {
-                    float x = (float) (lonToX(ring[i], world) - px), y = (float) (latToY(ring[i + 1], world) - py);
-                    if (i == 0) p.moveTo(x, y); else p.lineTo(x, y);
-                }
-                p.close();
-            }
-            c.drawPath(p, areaFill);
-            c.drawPath(p, areaEdge);
-        }
         RouteManager r = route;
         if (r != null) r.draw(c, z, px, py, world);
         c.restore();
 
-        Communities.Area here = Communities.shown ? communities.at(lat, lon) : null;
-        double th = Math.toRadians(-bearing), cos = Math.cos(th), sin = Math.sin(th);
-        for (Communities.Area a : nearby) {
-            if (a == here || a.areaM2 < Communities.LABEL_MIN_M2 || a.name.isEmpty()) continue;
-            double dx = lonToX(a.centerLon, world) - px, dy = latToY(a.centerLat, world) - py;
-            float sx = (float) (cx + dx * cos - dy * sin), sy = (float) (cy + dx * sin + dy * cos);
-            if (sx < 0 || sx > w || sy < 0 || sy > h) continue;
-            float tw = areaLabel.measureText(a.name);
-            c.drawText(a.name, sx - tw / 2, sy + 5, areaLabelHalo);
-            c.drawText(a.name, sx - tw / 2, sy + 5, areaLabel);
-        }
-
         Bitmap m = marker;
         if (m != null) {
             c.drawBitmap(m, cx - m.getWidth() / 2f, cy - m.getHeight() / 2f, tilePaint);
-        } else if ("vaca".equals(style)) {
-            drawCow(c, cx, cy);
+        } else if ("moto".equals(style)) {
+            drawBike(c, cx, cy);
         } else {
             c.save();
             c.translate(cx, cy);
@@ -467,16 +441,6 @@ final class MapPainter {
             c.drawPath(arrow, bikeEdge);
             c.restore();
         }
-
-        if (here != null) {
-            c.drawRect(3, 3, w - 3, h - 3, riskBorder);
-            float bw = riskText.measureText("AR") + 24;
-            c.drawRoundRect(w - bw - 12, 12, w - 12, 42, 8, 8, riskBadge);
-            c.drawText("AR", w - bw, 34, riskText);
-        }
-
-        cameras.update(lat, lon, bearing, speedKmh / 3.6);
-        cameras.paint(c, w, h, speedKmh);
 
         if (!simulated && System.currentTimeMillis() - fixAt > 10_000) c.drawText("sem GPS", 10, 26, text);
     }
@@ -490,15 +454,6 @@ final class MapPainter {
         return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * world;
     }
 
-    private final Communities communities = new Communities();
-    final SpeedCameras cameras = new SpeedCameras();
-    private final Paint areaFill = fill(Color.argb(70, 230, 40, 40));
-    private final Paint areaEdge = stroke(Color.argb(220, 255, 70, 70), 3f);
-    private final Paint areaLabel = label(Color.rgb(255, 210, 210), 0);
-    private final Paint areaLabelHalo = label(Color.rgb(40, 0, 0), 5);
-    private final Paint riskBorder = stroke(Color.rgb(230, 30, 30), 6f);
-    private final Paint riskBadge = fill(Color.rgb(230, 30, 30));
-    private final Paint riskText = bigLabel();
 
     private static Paint bigLabel() {
         Paint p = label(Color.WHITE, 0);
@@ -519,11 +474,14 @@ final class MapPainter {
         return p;
     }
 
-    private static final Paint cowWhite = fill(Color.rgb(250, 250, 245));
-    private static final Paint cowBlack = fill(Color.rgb(25, 25, 25));
-    private static final Paint cowPink = fill(Color.rgb(240, 160, 170));
-    private static final Paint cowHorn = fill(Color.rgb(225, 205, 160));
-    private static final Paint cowLine = stroke(Color.rgb(25, 25, 25), 2f);
+    private static final Paint bikeBody = fill(Color.rgb(255, 106, 0));
+    private static final Paint bikeShine = fill(Color.argb(110, 255, 255, 255));
+    private static final Paint bikeDark = fill(Color.rgb(28, 28, 32));
+    private static final Paint bikeLight = fill(Color.rgb(255, 235, 140));
+    private static final Paint bikeRed = fill(Color.rgb(230, 30, 30));
+    private static final Paint bikeMetal = stroke(Color.rgb(150, 154, 162), 3.2f);
+    private static final Paint bikeBar = stroke(Color.rgb(40, 40, 44), 3f);
+    private static final Paint bikeHalo = stroke(Color.WHITE, 2f);
 
     private static Paint fill(int color) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -543,49 +501,42 @@ final class MapPainter {
         c.drawOval(x - rx, y - ry, x + rx, y + ry, p);
     }
 
-    /** Vaca malhada vista de cima, cabeça para a frente (para cima na tela). */
-    private void drawCow(Canvas c, float cx, float cy) {
-        drawCowAt(c, cx, cy, 0.93f);
+    /** Moto vista de cima, frente para cima na tela. */
+    private void drawBike(Canvas c, float cx, float cy) {
+        drawBikeAt(c, cx, cy, 0.93f);
     }
 
-    static void drawCowAt(Canvas c, float cx, float cy, float scale) {
+    static void drawBikeAt(Canvas c, float cx, float cy, float scale) {
         c.save();
         c.translate(cx, cy);
         c.scale(scale, scale);
-        // rabo
-        c.drawLine(0, 22, 2, 33, cowLine);
-        oval(c, 2.5f, 35, 2.5f, 3.5f, cowBlack);
-        // cascos aparecendo nas laterais
-        oval(c, -12, -9, 3, 3.5f, cowBlack);
-        oval(c, 12, -9, 3, 3.5f, cowBlack);
-        oval(c, -11, 17, 3, 3.5f, cowBlack);
-        oval(c, 11, 17, 3, 3.5f, cowBlack);
-        // corpo
-        android.graphics.RectF body = new android.graphics.RectF(-13, -14, 13, 24);
-        c.drawRoundRect(body, 12, 13, cowWhite);
-        c.save();
-        Path clip = new Path();
-        clip.addRoundRect(body, 12, 13, Path.Direction.CW);
-        c.clipPath(clip);
-        oval(c, -7, -6, 7, 5, cowBlack);
-        oval(c, 8, 4, 6, 8, cowBlack);
-        oval(c, -5, 15, 6, 5, cowBlack);
-        oval(c, 10, 20, 4, 3, cowBlack);
-        c.restore();
-        c.drawRoundRect(body, 12, 13, cowLine);
-        // chifres e orelhas
-        oval(c, -9, -25, 5, 2, cowHorn);
-        oval(c, 9, -25, 5, 2, cowHorn);
-        oval(c, -10, -20, 4, 2.5f, cowBlack);
-        oval(c, 10, -20, 4, 2.5f, cowBlack);
-        // cabeça
-        oval(c, 0, -21, 7, 8, cowWhite);
-        oval(c, 2, -22, 3.5f, 4, cowBlack);
-        oval(c, 0, -21, 7, 8, cowLine);
-        // focinho
-        oval(c, 0, -28, 5.5f, 3.5f, cowPink);
-        oval(c, -2, -28.5f, 1, 1, cowBlack);
-        oval(c, 2, -28.5f, 1, 1, cowBlack);
+        android.graphics.RectF r = new android.graphics.RectF();
+        // pneus (com contorno claro para aparecer no mapa escuro)
+        r.set(-3.5f, 17, 3.5f, 37);
+        c.drawRoundRect(r, 3, 3, bikeHalo);
+        c.drawRoundRect(r, 3, 3, bikeDark);
+        r.set(-3, -35, 3, -15);
+        c.drawRoundRect(r, 3, 3, bikeHalo);
+        c.drawRoundRect(r, 3, 3, bikeDark);
+        // garfo e chassi
+        c.drawLine(0, -15, 0, -27, bikeMetal);
+        c.drawLine(0, -12, 0, 22, bikeMetal);
+        // guidão, manoplas e retrovisores
+        c.drawLine(-14, -17, 14, -17, bikeBar);
+        oval(c, -14, -17, 2.2f, 3, bikeDark);
+        oval(c, 14, -17, 2.2f, 3, bikeDark);
+        c.drawLine(-9, -17, -11, -25, bikeMetal);
+        c.drawLine(9, -17, 11, -25, bikeMetal);
+        oval(c, -11, -26, 2.6f, 2, bikeMetal);
+        oval(c, 11, -26, 2.6f, 2, bikeMetal);
+        // tanque e banco
+        oval(c, 0, -6, 8.5f, 12, bikeBody);
+        oval(c, 0, -9, 4, 6, bikeShine);
+        r.set(-5.5f, 4, 5.5f, 23);
+        c.drawRoundRect(r, 5, 6, bikeDark);
+        // farol e lanterna
+        oval(c, 0, -19.5f, 3.4f, 2.2f, bikeLight);
+        oval(c, 0, 25, 3, 1.6f, bikeRed);
         c.restore();
     }
 

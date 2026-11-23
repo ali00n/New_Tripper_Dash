@@ -88,29 +88,19 @@ public class MainActivity extends Activity {
         handleShare(intent);
     }
 
-    /** Local compartilhado pelo Google Maps (ou qualquer texto): vira destino da rota. */
+    /** Local compartilhado por outro app (ou qualquer texto): vira destino da rota. */
     private void handleShare(Intent intent) {
         if (!Intent.ACTION_SEND.equals(intent.getAction())) return;
         String text = intent.getStringExtra(Intent.EXTRA_TEXT);
         if (text == null || text.trim().isEmpty()) return;
         Logger.line("Rota: recebido do compartilhar: " + text.replace('\n', ' '));
-        goTo(text, false);
+        goTo(text);
     }
 
-    /** Traça a rota no painel e, se pedido, abre o Google Maps navegando para o mesmo ponto. */
-    private void goTo(String text, boolean openMaps) {
+    /** Traça a rota no painel. */
+    private void goTo(String text) {
         DashService.startIdle(this);
-        DashService.setDestination(text, () -> ui.post(() -> {
-            double[] d = DashService.destination();
-            if (d == null || !openMaps) return;
-            Intent nav = new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + d[0] + "," + d[1] + "&mode=l"));
-            nav.setPackage("com.google.android.apps.maps");
-            try {
-                startActivity(nav);
-            } catch (Exception e) {
-                Logger.line("Rota: não abri o Maps " + e.getMessage());
-            }
-        }), msg -> ui.post(() -> android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()));
+        DashService.setDestination(text, () -> {}, msg -> ui.post(() -> android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()));
     }
 
     // ---- sugestões enquanto digita ----
@@ -202,8 +192,17 @@ public class MainActivity extends Activity {
             return;
         }
         DashService.startMirror(this, resultCode, data);
-        Intent maps = getPackageManager().getLaunchIntentForPackage("com.google.android.apps.maps");
-        if (maps != null) startActivity(maps);
+        openWaze();
+    }
+
+    /** Abre o Waze (o espelho já está gravando a tela); sem Waze instalado, avisa. */
+    private void openWaze() {
+        Intent waze = getPackageManager().getLaunchIntentForPackage("com.waze");
+        if (waze == null) {
+            android.widget.Toast.makeText(this, "Waze não está instalado neste celular.", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        startActivity(waze);
     }
 
     /** Ícone desenhado pelo app (apaga a imagem própria, se houver). */
@@ -357,8 +356,6 @@ public class MainActivity extends Activity {
             if (introView != null || rootView == null) return;
             Intro in = new Intro();
             in.start();
-            if (moo) ui.postDelayed(Intro::moo, Intro.HOLD_MS);
-            String key = DashService.PIX_KEY, name = DashService.PIX_NAME, city = DashService.PIX_CITY;
             android.view.View v = new android.view.View(this) {
                 @Override
                 protected void onDraw(android.graphics.Canvas c) {
@@ -367,7 +364,7 @@ public class MainActivity extends Activity {
                     c.save();
                     c.translate((getWidth() - 526 * s) / 2f, (getHeight() - 300 * s) / 2f);
                     c.scale(s, s);
-                    in.paint(c, 526, 300, key, name, city);
+                    in.paint(c, 526, 300);
                     c.restore();
                     if (in.active()) postInvalidateOnAnimation();
                     else post(MainActivity.this::hideIntro);
@@ -429,7 +426,7 @@ public class MainActivity extends Activity {
     private android.widget.ImageView mapView;
     private PhoneMap phoneMap;
     private TextView turnDist, turnStreet, statusPill;
-    private TextView destLabel, destName, destMeta, tileDone, tileLeft, tileRadar, tripKm, tripState;
+    private TextView destLabel, destName, destMeta, tileDone, tileLeft, tripKm, tripState;
     private Button recButton;
     private int mapH;
 
@@ -479,7 +476,6 @@ public class MainActivity extends Activity {
 
     private android.view.View buildUi() {
         SharedPreferences prefs = getSharedPreferences("painel", MODE_PRIVATE);
-        Communities.loadSetting(this);
         android.widget.FrameLayout root = new android.widget.FrameLayout(this);
         root.setBackgroundColor(Color.WHITE);
 
@@ -667,7 +663,7 @@ public class MainActivity extends Activity {
         LinearLayout go = new LinearLayout(this);
         go.addView(dest, new LinearLayout.LayoutParams(0, dp(52), 1));
         Button ir = pill("Ir", ORANGE, Color.WHITE);
-        ir.setOnClickListener(v -> goTo(dest.getText().toString(), false));
+        ir.setOnClickListener(v -> goTo(dest.getText().toString()));
         LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(dp(72), dp(52));
         il.leftMargin = dp(8);
         go.addView(ir, il);
@@ -694,7 +690,6 @@ public class MainActivity extends Activity {
         tiles.setPadding(0, dp(12), 0, dp(12));
         tileDone = tile(tiles, "faltam");
         tileLeft = tile(tiles, "restante");
-        tileRadar = tile(tiles, "radar km/h");
         p.addView(tiles);
 
         LinearLayout actions = new LinearLayout(this);
@@ -704,24 +699,8 @@ public class MainActivity extends Activity {
         end.setBackground(eb);
         end.setOnClickListener(v -> DashService.clearRoute());
         actions.addView(end, new LinearLayout.LayoutParams(0, dp(52), 1));
-        Button maps = pill("Google Maps", TILE_BG, INK);
-        maps.setOnClickListener(v -> {
-            double[] d = DashService.destination();
-            Intent m = d != null
-                    ? new Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + d[0] + "," + d[1] + "&mode=l")).setPackage("com.google.android.apps.maps")
-                    : getPackageManager().getLaunchIntentForPackage("com.google.android.apps.maps");
-            if (m != null) startActivity(m);
-        });
-        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(0, dp(52), 1);
-        ml.leftMargin = dp(10);
-        actions.addView(maps, ml);
         p.addView(actions);
-        Button noRadar = pill("Não tem radar aqui", TILE_BG, INK);
-        noRadar.setOnClickListener(v -> android.widget.Toast.makeText(this, DashService.ignoreRadar(), android.widget.Toast.LENGTH_LONG).show());
-        LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(-1, dp(48));
-        nl.topMargin = dp(10);
-        p.addView(noRadar, nl);
-        p.addView(hint("O app navega sozinho: setas, distância e chegada vão direto ao painel. Avisou radar que não existe? Toque em \"Não tem radar aqui\" até 2 min depois de passar."));
+        p.addView(hint("O app navega sozinho: setas, distância e chegada vão direto ao painel."));
         return scroll(p);
     }
 
@@ -793,18 +772,6 @@ public class MainActivity extends Activity {
                     DashService.start(this, s, pw);
                 }),
                 button("Desligar", v -> DashService.stop(this))));
-        p.addView(section("Áreas de risco"));
-        p.addView(hint("Comunidades do Rio (Data.Rio 2022) em vermelho no painel e no celular."));
-        Button risk = button("", null);
-        risk.setText(Communities.shown ? "Ligadas (toque para desligar)" : "Desligadas (toque para ligar)");
-        risk.setOnClickListener(v -> {
-            Communities.shown = !Communities.shown;
-            prefs.edit().putBoolean("risco", Communities.shown).apply();
-            risk.setText(Communities.shown ? "Ligadas (toque para desligar)" : "Desligadas (toque para ligar)");
-            if (phoneMap != null) phoneMap.applyRiskVisibility();
-            Logger.line("Áreas de risco " + (Communities.shown ? "ligadas" : "desligadas"));
-        });
-        p.addView(row(risk));
         p.addView(section("Mapa sem internet"));
         p.addView(hint("Baixe o mapa do seu estado pelo Wi-Fi: depois o mapa funciona mesmo sem sinal. Dá para baixar mais de um."));
         TextView offStatus = text(OfflineMaps.progress(), 13, INK, false);
@@ -822,8 +789,7 @@ public class MainActivity extends Activity {
         });
         p.addView(row(pick));
         p.addView(section("Sobre"));
-        p.addView(hint("Cow Tripper Dash " + versionName() + ". App gratuito e independente, sem vínculo com a Royal Enfield. Acompanhe as novidades e mande sugestões no Instagram @mimosa450cc."));
-        p.addView(row(button("Seguir @mimosa450cc", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.instagram.com/mimosa450cc/"))))));
+        p.addView(hint("New Tripper Dash " + versionName() + ". App gratuito e independente, sem vínculo com a Royal Enfield."));
         if (!APOIA_URL.isEmpty())
             p.addView(row(button("Apoie o projeto (Apoia.se)", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(APOIA_URL))))));
         if (!BuildConfig.PUBLICO) {
@@ -844,14 +810,14 @@ public class MainActivity extends Activity {
                         Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS}, 7))));
         p.addView(section("Ícone da moto no mapa"));
         p.addView(row(
-                button("Vaca", v -> setIcon("vaca")),
+                button("Moto", v -> setIcon("moto")),
                 button("Seta", v -> setIcon("seta")),
                 button("Imagem…", v -> startActivityForResult(
                         new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"), REQ_ICON))));
         p.addView(section("Painel (avançado)"));
         p.addView(row(
                 button("Mapa no painel", v -> DashService.toggleVideo()),
-                button("Espelhar Maps", v -> askMirror())));
+                button("Espelhar Waze", v -> askMirror())));
         if (!BuildConfig.PUBLICO) p.addView(row(
                 button("Seta teste", v -> DashService.sendTestArrow()),
                 button("Marcar no log", v -> Logger.line("===== MARCA DO EVANDRO ====="))));
@@ -917,7 +883,6 @@ public class MainActivity extends Activity {
         tileDone.setText(h.nav != null ? String.format(java.util.Locale.ROOT, "%.1f km", h.nav.metersLeft / 1000.0) : "—");
         tripKm.setText(String.format(java.util.Locale.ROOT, "%.1f km", h.recording ? h.tripKm : 0));
         tripState.setText(h.recording ? "● gravando" : "parado");
-        tileRadar.setText(h.radarLimit > 0 ? String.valueOf(h.radarLimit) : "—");
         recButton.setText(h.recording ? "■ Encerrar rolê" : "● Registrar rolê");
         recButton.setBackground(round(h.recording ? INK : ORANGE, 26));
     }
@@ -992,7 +957,7 @@ public class MainActivity extends Activity {
     }
 
     /** Arquivo com a última versão pública (no GitHub aberto do projeto). */
-    private static final String UPDATE_URL = "https://raw.githubusercontent.com/evandroreis01/CowTripperDash/main/versao.json";
+    private static final String UPDATE_URL = "https://raw.githubusercontent.com/ali00n/New_Tripper_Dash/main/versao.json";
 
     /** No máximo a cada 12 h: se saiu versão nova, avisa e leva para a página de download. */
     private void checkUpdate() {
@@ -1010,7 +975,7 @@ public class MainActivity extends Activity {
                     if (isFinishing()) return;
                     new android.app.AlertDialog.Builder(this)
                             .setTitle("Nova versão " + name)
-                            .setMessage(notes.isEmpty() ? "Tem versão nova do Cow Tripper Dash." : notes)
+                            .setMessage(notes.isEmpty() ? "Tem versão nova do New Tripper Dash." : notes)
                             .setPositiveButton("Baixar", (d, w) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))))
                             .setNegativeButton("Depois", null)
                             .show();

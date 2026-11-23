@@ -125,7 +125,7 @@ final class OfflineMaps {
      * Estilo publicado na internet para o download. 22/11: com o estilo em file:// o download ficava
      * em 0% para sempre (o baixador do MapLibre só busca recursos pela rede). É o mesmo MapStyle.json().
      */
-    static final String REMOTE_STYLE = "https://raw.githubusercontent.com/evandroreis01/CowTripperDash/main/mapa/estilo.json";
+    static final String REMOTE_STYLE = "https://raw.githubusercontent.com/ali00n/New_Tripper_Dash/main/mapa/estilo.json";
 
     static void download(Context context, Area area, java.util.function.Consumer<String> onProgress) {
         download(context, area, REMOTE_STYLE, onProgress);

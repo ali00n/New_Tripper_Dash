@@ -311,7 +311,7 @@ final class TripVideo {
         dot(c, cx, cy, Color.WHITE);
         text(c, String.format(Locale.ROOT, "%.0f m", ele[last]), Math.min(cx + 18, right - 120), cy - 18, 30, Color.WHITE, true);
         text(c, String.format(Locale.ROOT, "relevo · máx %.0f m · vel. máx %.0f km/h", maxEle, maxKmh), left, top - 30, 28, Color.rgb(150, 155, 165), false);
-        text(c, BuildConfig.PUBLICO ? "Cow Tripper Dash" : "Tripper do Evandro", W - 300, H - 25, 24, Color.rgb(110, 114, 124), false);
+        text(c, BuildConfig.PUBLICO ? "New Tripper Dash" : "Tripper do Evandro", W - 300, H - 25, 24, Color.rgb(110, 114, 124), false);
     }
 
     private void line(int color, float width) {
@@ -362,30 +362,10 @@ final class TripVideo {
     }
 
     private void drawCow(Canvas c, float x, float y, float headingDeg, float scale) {
-        Paint w = new Paint(Paint.ANTI_ALIAS_FLAG), b = new Paint(Paint.ANTI_ALIAS_FLAG), o = new Paint(Paint.ANTI_ALIAS_FLAG);
-        w.setColor(Color.rgb(250, 250, 245));
-        b.setColor(Color.rgb(25, 25, 25));
-        o.setColor(Color.rgb(25, 25, 25));
-        o.setStyle(Paint.Style.STROKE);
-        o.setStrokeWidth(3);
         c.save();
         c.translate(x, y);
         c.rotate(headingDeg);
-        c.scale(scale, scale);
-        c.translate(0, -5);
-        RectF body = new RectF(-13, -14, 13, 24);
-        c.drawRoundRect(body, 12, 13, w);
-        c.drawOval(-12, -11, -2, -1, b);
-        c.drawOval(3, -3, 13, 11, b);
-        c.drawOval(-10, 11, 0, 19, b);
-        c.drawRoundRect(body, 12, 13, o);
-        c.drawOval(-7, -29, 7, -13, w);
-        c.drawOval(-7, -29, 7, -13, o);
-        Paint pink = new Paint(Paint.ANTI_ALIAS_FLAG);
-        pink.setColor(Color.rgb(240, 160, 170));
-        c.drawOval(-5.5f, -31.5f, 5.5f, -24.5f, pink);
-        c.drawOval(-14, -22.5f, -6, -17.5f, b);
-        c.drawOval(6, -22.5f, 14, -17.5f, b);
+        MapPainter.drawBikeAt(c, 0, 0, scale * 0.9f);
         c.restore();
     }
 

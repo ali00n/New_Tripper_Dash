@@ -57,7 +57,7 @@ final class PhoneMap {
             Style.Builder b = new Style.Builder().fromJson(MapStyle.json());
             float d = activity.getResources().getDisplayMetrics().density;
             for (String k : MapStyle.ICONS) b.withImage(k, MapStyle.icon(k, d));
-            b.withImage("vaca", cow(d));
+            b.withImage("moto-img", bike(d));
             m.setStyle(b, s -> {
                 style = s;
                 s.addSource(new GeoJsonSource("rota-feita"));
@@ -75,11 +75,10 @@ final class PhoneMap {
                 s.addLayer(new LineLayer("rota-linha", "rota").withProperties(
                         PropertyFactory.lineColor("#4292ff"), PropertyFactory.lineWidth(7f),
                         PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)));
-                s.addLayer(new SymbolLayer("moto-vaca", "moto").withProperties(
-                        PropertyFactory.iconImage("vaca"), PropertyFactory.iconAllowOverlap(true), PropertyFactory.iconIgnorePlacement(true),
+                s.addLayer(new SymbolLayer("moto-icone", "moto").withProperties(
+                        PropertyFactory.iconImage("moto-img"), PropertyFactory.iconAllowOverlap(true), PropertyFactory.iconIgnorePlacement(true),
                         PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
                         PropertyFactory.iconRotate(org.maplibre.android.style.expressions.Expression.get("rumo"))));
-                loadRiskAreas(s);
                 update();
             });
             m.addOnCameraMoveStartedListener(reason -> {
@@ -92,65 +91,6 @@ final class PhoneMap {
                 return true;
             });
         });
-    }
-
-    /** Áreas de risco (comunidades, Data.Rio 2022): mesmo vermelho do painel, por baixo da rota. */
-    private void loadRiskAreas(Style s) {
-        new Thread(() -> {
-            try (java.io.InputStream in = activity.getAssets().open("comunidades.json")) {
-                org.json.JSONArray areas = new org.json.JSONObject(new String(in.readAllBytes(), "UTF-8")).getJSONArray("areas");
-                StringBuilder g = new StringBuilder("{\"type\":\"FeatureCollection\",\"features\":[");
-                for (int i = 0; i < areas.length(); i++) {
-                    org.json.JSONObject a = areas.getJSONObject(i);
-                    org.json.JSONArray rings = a.getJSONArray("p");
-                    if (i > 0) g.append(',');
-                    g.append("{\"type\":\"Feature\",\"properties\":{\"nome\":").append(org.json.JSONObject.quote(a.optString("nome", "")))
-                            .append("},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[");
-                    for (int r = 0; r < rings.length(); r++) {
-                        org.json.JSONArray ring = rings.getJSONArray(r);
-                        if (r > 0) g.append(',');
-                        g.append('[');
-                        for (int k = 0; k + 1 < ring.length(); k += 2) {
-                            if (k > 0) g.append(',');
-                            g.append('[').append(ring.getDouble(k)).append(',').append(ring.getDouble(k + 1)).append(']');
-                        }
-                        g.append(']');
-                    }
-                    g.append("]}}");
-                }
-                g.append("]}");
-                String json = g.toString();
-                activity.runOnUiThread(() -> {
-                    if (style != s) return;
-                    s.addSource(new GeoJsonSource("risco", json));
-                    s.addLayerBelow(new org.maplibre.android.style.layers.FillLayer("risco-area", "risco").withProperties(
-                            PropertyFactory.fillColor("#e62828"), PropertyFactory.fillOpacity(0.27f)), "rota-contorno");
-                    s.addLayerBelow(new LineLayer("risco-borda", "risco").withProperties(
-                            PropertyFactory.lineColor("#ff4646"), PropertyFactory.lineWidth(2f), PropertyFactory.lineOpacity(0.86f)), "rota-contorno");
-                    SymbolLayer names = new SymbolLayer("risco-nome", "risco").withProperties(
-                            PropertyFactory.textField(org.maplibre.android.style.expressions.Expression.get("nome")),
-                            PropertyFactory.textFont(new String[]{"Noto Sans Bold"}), PropertyFactory.textSize(12f),
-                            PropertyFactory.textColor("#ffd2d2"), PropertyFactory.textHaloColor("#280000"), PropertyFactory.textHaloWidth(2f));
-                    names.setMinZoom(14.5f);
-                    s.addLayerBelow(names, "rota-contorno");
-                    applyRiskVisibility();
-                    Logger.line("Mapa do celular: " + areas.length() + " áreas de risco");
-                });
-            } catch (Exception e) {
-                Logger.line("Mapa do celular: áreas de risco não carregaram " + e);
-            }
-        }, "risco").start();
-    }
-
-    /** Liga/desliga as camadas de risco no mapa do celular, conforme o ajuste. */
-    void applyRiskVisibility() {
-        Style s = style;
-        if (s == null) return;
-        String v = Communities.shown ? Property.VISIBLE : Property.NONE;
-        for (String id : new String[]{"risco-area", "risco-borda", "risco-nome"}) {
-            org.maplibre.android.style.layers.Layer l = s.getLayer(id);
-            if (l != null) l.setProperties(PropertyFactory.visibility(v));
-        }
     }
 
     void setListener(Listener l) {
@@ -231,13 +171,13 @@ final class PhoneMap {
         return Math.round(v * activity.getResources().getDisplayMetrics().density);
     }
 
-    /** Vaca vista de cima (mesma do painel), em imagem para o mapa do celular. */
-    private static Bitmap cow(float density) {
+    /** Moto vista de cima (mesma do painel), em imagem para o mapa do celular. */
+    private static Bitmap bike(float density) {
         int w = Math.round(34 * density), h = Math.round(46 * density);
         Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(b);
         c.scale(density, density);
-        MapPainter.drawCowAt(c, 17, 22, 0.75f);
+        MapPainter.drawBikeAt(c, 17, 22, 0.75f);
         return b;
     }
 

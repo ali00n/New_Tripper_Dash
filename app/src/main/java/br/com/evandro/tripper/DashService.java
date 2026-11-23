@@ -248,8 +248,7 @@ public class DashService extends Service {
         NavState nav;
         String dest;
         double tripKm;
-        int radarLimit = -1, radarDist;
-    }
+            }
 
     static HomeInfo homeInfo() {
         HomeInfo h = new HomeInfo();
@@ -262,8 +261,6 @@ public class DashService extends Service {
         h.dest = s.route.hasDestination() ? s.route.destName() : null;
         h.recording = s.trips.isRecording();
         h.tripKm = s.trips.metersSoFar() / 1000;
-        h.radarLimit = s.map.cameras.aheadLimit();
-        h.radarDist = s.map.cameras.aheadDistance();
         return h;
     }
 
@@ -363,10 +360,6 @@ public class DashService extends Service {
     }
 
     /** Posição da moto para o mapa do celular; com o app aberto, liga o GPS se ainda estiver desligado. */
-    static String ignoreRadar() {
-        DashService s = current;
-        return s == null ? "Serviço desligado." : s.map.cameras.ignoreRecent();
-    }
 
     static double[] bikePosition() {
         DashService s = current;
@@ -462,13 +455,13 @@ public class DashService extends Service {
     private void askMirror() {
         if (mirror.isRunning()) return;
         NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel("espelho", "Espelhar o Maps", NotificationManager.IMPORTANCE_HIGH));
+        nm.createNotificationChannel(new NotificationChannel("espelho", "Espelhar o Waze", NotificationManager.IMPORTANCE_HIGH));
         Intent open = new Intent(this, MainActivity.class).putExtra(MainActivity.EXTRA_MIRROR, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent tap = PendingIntent.getActivity(this, 9, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         nm.notify(9, new Notification.Builder(this, "espelho")
                 .setContentTitle("Painel no modo mapa")
-                .setContentText("Toque para espelhar o Google Maps")
+                .setContentText("Toque para espelhar o Waze")
                 .setSmallIcon(android.R.drawable.ic_menu_mapmode)
                 .setContentIntent(tap)
                 .setAutoCancel(true)
@@ -731,11 +724,10 @@ public class DashService extends Service {
             if (!projector.isRunning() && !projector.start()) return;
             projector.requestKeyFrame();
             Logger.line("mapa: vídeo no ar");
-            // Abertura obrigatória a cada conexão (app gratuito com pedido de PIX, estilo WinRAR):
+            // Abertura obrigatória a cada conexão :
             // começa quando o vídeo entra no ar, senão acaba antes de o painel mostrar.
             intro.start();
-            handler.postDelayed(Intro::moo, Intro.HOLD_MS); // muge quando a vaca começa a mexer
-            Logger.line("Abertura: vaca + PIX no painel");
+            Logger.line("Abertura: moto no painel");
         }, 2050);
     }
 
@@ -810,7 +802,6 @@ public class DashService extends Service {
     public void onCreate() {
         NetFallback.appContext = getApplicationContext();
         super.onCreate();
-        Communities.loadSetting(this);
         current = this;
         Logger.init(this);
         link = new DashLink(this, Logger::line);
@@ -823,7 +814,7 @@ public class DashService extends Service {
             @Override
             public void onStep(NavState state, int remainingUnit) {
                 handler.post(() -> {
-                    if (!ownNav) Logger.line("Navegação própria: guiando pelo app (Google Maps não é necessário)");
+                    if (!ownNav) Logger.line("Navegação própria: guiando pelo app ");
                     ownNav = true;
                     updateNav(state, remainingUnit);
                 });
@@ -840,7 +831,7 @@ public class DashService extends Service {
         });
         projector = new VideoProjector(frame = (c, w, h, f) -> {
             if (intro.active()) {
-                intro.paint(c, w, h, PIX_KEY, PIX_NAME, PIX_CITY, true);
+                intro.paint(c, w, h, true);
                 return;
             }
             if (BuildConfig.DOOM && DoomEngine.running()) {
@@ -945,8 +936,6 @@ public class DashService extends Service {
     /** Wi-Fi do painel do Evandro; na edição pública vazio = conecta no primeiro painel "RE_" à vista. */
     static final String DEFAULT_SSID = "";
 
-    /** Chave PIX da abertura: fixa no código (quem baixar o app não troca). */
-    static final String PIX_KEY = "957a78be-42bc-4001-b203-424a7c4af563", PIX_NAME = "COW TRIPPER DASH", PIX_CITY = "RIO DE JANEIRO";
 
     /** Teste de estresse (moto parada): fases de sobrecarga, rede e GPS ruins; relatório no log. */
     String startStressTest(int secondsPerPhase) {
@@ -983,7 +972,6 @@ public class DashService extends Service {
                 return map.status() + "\n";
             case "abertura":
                 intro.start();
-                Intro.moo();
                 return "abertura tocando (aparece no painel se o vídeo estiver ligado)\n";
             case "simular-zoom":
                 return StressTest.zoomRide(new StressTest.Env() {
@@ -1149,8 +1137,6 @@ public class DashService extends Service {
             case "poi":
                 poi.onRequest(Integer.parseInt(args.getOrDefault("tipo", "10")));
                 return "buscando" + (char) 10;
-            case "radar":
-                return map.cameras.nearestTo(Double.parseDouble(args.get("lat")), Double.parseDouble(args.get("lon"))) + (char) 10;
             case "tele":
                 return link.telemetryReport();
             case "mapa":
@@ -1199,7 +1185,7 @@ public class DashService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_MIRROR.equals(intent.getAction())) {
-            startForeground(1, buildNotification("Espelhando o Maps no painel"),
+            startForeground(1, buildNotification("Espelhando o Waze no painel"),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
             Intent data = intent.getParcelableExtra("data", Intent.class);
             boolean ok = data != null && mirror.start(this, intent.getIntExtra("code", 0), data, () -> handler.post(() ->
@@ -1297,7 +1283,7 @@ public class DashService extends Service {
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, DashService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, "painel")
-                .setContentTitle(BuildConfig.PUBLICO ? "Cow Tripper Dash" : "Tripper do Evandro")
+                .setContentTitle(BuildConfig.PUBLICO ? "New Tripper Dash" : "Tripper do Evandro")
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_menu_directions)
                 .setContentIntent(open)

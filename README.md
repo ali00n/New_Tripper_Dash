@@ -1,20 +1,19 @@
-# Cow Tripper Dash 🐄
+# New Tripper Dash 🐄
 
 App **gratuito e de código aberto** que leva o mapa de navegação ao painel **Tripper Dash (TFT)** da
-**Royal Enfield Himalayan 450**, sem depender do app oficial nem do Google Maps.
+**Royal Enfield Himalayan 450**, sem depender do app oficial.
 
 > Projeto independente, feito por um motociclista. **Sem nenhum vínculo com a Royal Enfield.**
 > Use por sua conta e risco, configure a rota com a moto parada e mantenha a atenção no trânsito.
 
 **Baixar o app (Android):** https://claude.ai/artifact/6B1T4QCLjCPfNmV2AW5np4
-Novidades e testes na estrada: Instagram [@mimosa450cc](https://www.instagram.com/mimosa450cc/)
 
 ## O que ele faz
 
 - Mapa em tela cheia no painel, com seta, distância, rua e horário de chegada (navegação própria, rotas OSRM)
 - Conexão automática: ligou a moto, o app acha o Wi-Fi do painel e conecta
 - Mapa sem internet: baixa o mapa do estado (MapLibre + OpenFreeMap) e funciona sem sinal
-- Radares de velocidade (OpenStreetMap) e camada opcional de áreas de risco (Rio de Janeiro)
+- Espelhamento do Waze no painel (botão "Espelhar Waze")
 - Nome de quem liga no painel, atender e desligar pelo joystick
 - Música no painel (título, artista, capa)
 
@@ -34,7 +33,7 @@ a cada conexão e a chave de sessão é gerada na hora.
 |---|---|
 | `app/` | Android (Java, Gradle). Edição `publico` (a distribuída), `evandro` (desenvolvimento) e `doom` (vídeo de demonstração) |
 | `ios/` | iPhone (Swift), fase de teste: conecta, autentica e manda uma seta |
-| `ferramentas/` | Scripts que geram os dados de radares, comunidades e áreas de risco |
+| `ferramentas/` | Ferramentas da edição DOOM |
 | `.github/workflows/` | Builds no GitHub Actions (IPA sem assinatura e a edição DOOM) |
 
 ## Compilar (Android)
