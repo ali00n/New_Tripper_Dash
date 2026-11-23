@@ -736,8 +736,14 @@ public class MainActivity extends Activity {
                 DashService.startIdle(this);
                 DashService.startTrip();
             } else {
+                java.util.List<TripRecorder.Trip> before = DashService.listTrips();
+                String lastName = before.isEmpty() ? "" : before.get(0).file.getName();
                 DashService.stopTrip();
-                ui.postDelayed(this::showTripsLater, 500);
+                ui.postDelayed(() -> {
+                    showTripsLater();
+                    java.util.List<TripRecorder.Trip> after = DashService.listTrips();
+                    if (!after.isEmpty() && !after.get(0).file.getName().equals(lastName)) openTrip(after.get(0), tripListBox);
+                }, 600);
             }
         });
         p.addView(recButton, new LinearLayout.LayoutParams(-1, dp(52)));
@@ -752,6 +758,104 @@ public class MainActivity extends Activity {
         p.addView(refresh);
         showTrips(tripList);
         return scroll(p);
+    }
+
+    private android.view.View toggle(String label, boolean on, java.util.function.Consumer<Boolean> change) {
+        android.widget.Switch sw = new android.widget.Switch(this);
+        sw.setText(label);
+        sw.setTextSize(14);
+        sw.setTextColor(INK);
+        sw.setChecked(on);
+        sw.setPadding(0, dp(8), 0, dp(8));
+        sw.setOnCheckedChangeListener((b, v) -> change.accept(v));
+        return sw;
+    }
+
+    private static final java.util.Locale PT = new java.util.Locale("pt", "BR");
+
+    private void renderMaintenance(LinearLayout box) {
+        box.removeAllViews();
+        double odo = Maintenance.odometerKm(this);
+        box.addView(hint(String.format(PT, "Hodômetro do app: %,.0f km. Soma só o que o GPS vê rodando; ajuste para bater com o da moto.", odo)));
+        EditText km = field(String.format(java.util.Locale.ROOT, "%.0f", odo), false);
+        km.setInputType(InputType.TYPE_CLASS_NUMBER);
+        box.addView(km);
+        box.addView(row(button("Ajustar km da moto", v -> {
+            try {
+                Maintenance.setOdometerKm(this, Double.parseDouble(km.getText().toString().trim()));
+                renderMaintenance(box);
+            } catch (NumberFormatException e) {
+                android.widget.Toast.makeText(this, "Digite só o número de km.", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        })));
+        java.util.List<Maintenance.Item> items = Maintenance.items(this);
+        for (int i = 0; i < items.size(); i++) {
+            final int idx = i;
+            Maintenance.Item it = items.get(i);
+            Button b = button(it.name + " · " + Maintenance.statusText(it, odo), v -> editMaintenance(idx, box));
+            b.setAllCaps(false);
+            if (it.remainingKm(odo) <= 0) b.setTextColor(Color.rgb(200, 30, 30));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
+            lp.topMargin = dp(6);
+            box.addView(b, lp);
+        }
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(-1, dp(48));
+        ap.topMargin = dp(6);
+        box.addView(button("+ Adicionar item", v -> editMaintenance(-1, box)), ap);
+        box.addView(hint("Toque num item para ajustar o intervalo, marcar como feito ou apagar. O app avisa por notificação quando faltar pouco e quando vencer."));
+    }
+
+    private void editMaintenance(int idx, LinearLayout box) {
+        java.util.List<Maintenance.Item> items = Maintenance.items(this);
+        boolean isNew = idx < 0;
+        double odo = Maintenance.odometerKm(this);
+        Maintenance.Item it = isNew ? new Maintenance.Item("", 5000, odo) : items.get(idx);
+        LinearLayout form = column();
+        form.setPadding(dp(20), dp(8), dp(20), 0);
+        EditText name = field(it.name, false);
+        name.setHint("Ex.: Pastilhas de freio");
+        EditText interval = field(String.valueOf(it.intervalKm), false);
+        interval.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText last = field(String.format(java.util.Locale.ROOT, "%.0f", it.lastKm), false);
+        last.setInputType(InputType.TYPE_CLASS_NUMBER);
+        form.addView(hint("Nome"));
+        form.addView(name);
+        form.addView(hint("Repetir a cada (km)"));
+        form.addView(interval);
+        form.addView(hint("Última vez feito no km"));
+        form.addView(last);
+        android.app.AlertDialog.Builder dlg = new android.app.AlertDialog.Builder(this)
+                .setTitle(isNew ? "Novo item" : it.name)
+                .setView(form)
+                .setPositiveButton("Salvar", (d, w) -> {
+                    try {
+                        String n = name.getText().toString().trim();
+                        int iv = Integer.parseInt(interval.getText().toString().trim());
+                        double lk = Double.parseDouble(last.getText().toString().trim());
+                        if (n.isEmpty() || iv <= 0) throw new NumberFormatException();
+                        it.name = n;
+                        it.intervalKm = iv;
+                        it.lastKm = lk;
+                        if (isNew) items.add(it);
+                        Maintenance.save(this, items);
+                        renderMaintenance(box);
+                    } catch (NumberFormatException e) {
+                        android.widget.Toast.makeText(this, "Confira o nome e os números.", android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                });
+        if (!isNew) {
+            dlg.setNeutralButton("Feito agora", (d, w) -> {
+                it.lastKm = odo;
+                Maintenance.save(this, items);
+                renderMaintenance(box);
+            });
+            dlg.setNegativeButton("Apagar", (d, w) -> {
+                items.remove(idx);
+                Maintenance.save(this, items);
+                renderMaintenance(box);
+            });
+        }
+        dlg.show();
     }
 
     private android.view.View ajustesPage(SharedPreferences prefs) {
@@ -772,6 +876,18 @@ public class MainActivity extends Activity {
                     DashService.start(this, s, pw);
                 }),
                 button("Desligar", v -> DashService.stop(this))));
+        p.addView(section("Automático"));
+        p.addView(toggle("Conectar sozinho quando a moto ligar", prefs.getBoolean("auto", true), on -> {
+            prefs.edit().putBoolean("auto", on).apply();
+            if (on) DashService.startIdle(this);
+        }));
+        p.addView(toggle("Gravar o rolê sozinho ao conectar", prefs.getBoolean("auto_role", true),
+                on -> prefs.edit().putBoolean("auto_role", on).apply()));
+        p.addView(hint("O rolê gravado vira resumo, vídeo e arquivo GPX na aba Diário."));
+        p.addView(section("Manutenção da moto"));
+        LinearLayout maintBox = column();
+        p.addView(maintBox);
+        renderMaintenance(maintBox);
         p.addView(section("Mapa sem internet"));
         p.addView(hint("Baixe o mapa do seu estado pelo Wi-Fi: depois o mapa funciona mesmo sem sinal. Dá para baixar mais de um."));
         TextView offStatus = text(OfflineMaps.progress(), 13, INK, false);
@@ -841,13 +957,13 @@ public class MainActivity extends Activity {
             android.widget.Toast.makeText(this, "Painel conectado. Segure o botão para desligar.", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        if (h.serviceOn) {
+        if (h.serviceOn && h.searching) {
             android.widget.Toast.makeText(this, "Já estou procurando o painel. Ligue a moto.", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         SharedPreferences prefs = getSharedPreferences("painel", MODE_PRIVATE);
         String ssid = prefs.getString("ssid", DashService.DEFAULT_SSID);
-        if (ssid.isEmpty()) DashService.startIdle(this); // acha o RE_... sozinho
+        if (ssid.isEmpty()) DashService.searchNow(this); // acha o RE_... sozinho
         else DashService.start(this, ssid, prefs.getString("pass", "12345678"));
         android.widget.Toast.makeText(this, "Procurando o painel… ligue a moto.", android.widget.Toast.LENGTH_SHORT).show();
     }
@@ -858,7 +974,7 @@ public class MainActivity extends Activity {
         if (h.connected) {
             statusPill.setText(h.digital ? "● Painel · digital" : "● Painel · analógico");
             statusPill.setTextColor(Color.rgb(61, 220, 132));
-        } else if (h.serviceOn) {
+        } else if (h.serviceOn && h.searching) {
             statusPill.setText("◌ Procurando painel…");
             statusPill.setTextColor(Color.rgb(255, 193, 7));
         } else {
@@ -899,6 +1015,44 @@ public class MainActivity extends Activity {
     }
 
     /** Lista as viagens; tocar = gerar animação + imagem e oferecer compartilhar. */
+    /** Resumo do rolê, com vídeo e GPX. */
+    private void openTrip(TripRecorder.Trip t, LinearLayout box) {
+        TripSummary sum;
+        try {
+            sum = TripSummary.load(t.file);
+        } catch (Exception e) {
+            android.widget.Toast.makeText(this, "Não consegui ler este rolê.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final TripSummary summary = sum;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Rolê de " + t.title)
+                .setMessage(summary.text())
+                .setPositiveButton("Gerar vídeo", (d, w) -> makeTripVideo(t, box))
+                .setNeutralButton("Salvar GPX", (d, w) -> {
+                    String name = summary.exportGpx(this, t.file.getName().replace(".json", ""));
+                    android.widget.Toast.makeText(this, name != null ? "Salvo em Downloads/NewTripperDash/" + name : "Não consegui salvar o GPX.",
+                            android.widget.Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    private void makeTripVideo(TripRecorder.Trip t, LinearLayout box) {
+        TextView status = hint("Gerando animação de " + t.title + "… (uns 20 s)");
+        box.addView(status, 0);
+        DashService.makeVideo(t.file, (png, mp4, err) -> ui.post(() -> {
+            if (err != null) {
+                status.setText("Falhou: " + err);
+                return;
+            }
+            status.setText("Pronto! Salvo na galeria (Tripper).");
+            box.addView(row(
+                    button("Compartilhar vídeo", x -> share(mp4, "video/mp4")),
+                    button("Compartilhar imagem", x -> share(png, "image/png"))), 1);
+        }));
+    }
+
     private void showTrips(LinearLayout box) {
         box.removeAllViews();
         java.util.List<TripRecorder.Trip> trips = DashService.listTrips();
@@ -908,20 +1062,7 @@ public class MainActivity extends Activity {
         }
         for (TripRecorder.Trip t : trips) {
             String label = String.format(java.util.Locale.ROOT, "%s · %.1f km · %d min", t.title, t.km, t.movingSec / 60);
-            Button b = button(label, v -> {
-                TextView status = hint("Gerando animação de " + t.title + "… (uns 20 s)");
-                box.addView(status, 0);
-                DashService.makeVideo(t.file, (png, mp4, err) -> ui.post(() -> {
-                    if (err != null) {
-                        status.setText("Falhou: " + err);
-                        return;
-                    }
-                    status.setText("Pronto! Salvo na galeria (Tripper).");
-                    box.addView(row(
-                            button("Compartilhar vídeo", x -> share(mp4, "video/mp4")),
-                            button("Compartilhar imagem", x -> share(png, "image/png"))), 1);
-                }));
-            });
+            Button b = button(label, v -> openTrip(t, box));
             b.setAllCaps(false);
             box.addView(b);
         }

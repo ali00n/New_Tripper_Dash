@@ -80,6 +80,7 @@ public class DashService extends Service {
                 }
                 return;
             }
+            if (!prefs.getBoolean("auto", true) && !forceSearch) return; // conexão automática desligada nos Ajustes
             if (link.isBusy()) return;
             if (skipTicks > 0) {
                 skipTicks--;
@@ -199,11 +200,45 @@ public class DashService extends Service {
             logPerformance();
             if (trips != null) {
                 trips.tick();
+                long nowMs = System.currentTimeMillis();
+                if (autoTrip && trips.isRecording()) {
+                    if (link.isAuthenticated()) lostSince = 0;
+                    else if (lostSince == 0) lostSince = nowMs;
+                    else if (nowMs - lostSince > 60_000) {
+                        trips.finish();
+                        autoTrip = false;
+                        lostSince = 0;
+                        Logger.line("Rolê automático: painel desligou, rolê encerrado");
+                    }
+                }
+                if (!trips.isRecording()) autoTrip = false;
+                if (nowMs - lastMaintCheck > 600_000) {
+                    lastMaintCheck = nowMs;
+                    Maintenance.checkAndNotify(DashService.this);
+                }
                 if (gps != null && !link.isAuthenticated() && !trips.isRecording() && !projecting && !route.hasDestination() && !MainActivity.onScreen()) stopGps();
             }
             handler.postDelayed(this, CLOCK_MS);
         }
     };
+
+    /** Busca manual (botão "Ligar com a moto"): vale mesmo com a conexão automática desligada. */
+    static volatile boolean forceSearch;
+
+    static void searchNow(Context context) {
+        forceSearch = true;
+        startIdle(context);
+        DashService s = current;
+        if (s != null) s.handler.post(() -> {
+            s.failedTries = 0;
+            s.skipTicks = 0;
+            s.handler.post(s.autoConnect);
+        });
+    }
+
+    /** Rolê gravado sozinho ao conectar: termina quando o painel some por mais de 1 min. */
+    private boolean autoTrip;
+    private long lostSince, lastMaintCheck;
 
     static void start(Context context, String ssid, String pass) {
         Intent i = new Intent(context, DashService.class).putExtra(EXTRA_SSID, ssid).putExtra(EXTRA_PASS, pass);
@@ -244,7 +279,7 @@ public class DashService extends Service {
 
     /** Resumo para a tela inicial do app. */
     static final class HomeInfo {
-        boolean connected, digital, recording, serviceOn;
+        boolean connected, digital, recording, serviceOn, searching;
         NavState nav;
         String dest;
         double tripKm;
@@ -255,6 +290,7 @@ public class DashService extends Service {
         DashService s = current;
         if (s == null) return h;
         h.serviceOn = true;
+        h.searching = forceSearch || s.getSharedPreferences("painel", MODE_PRIVATE).getBoolean("auto", true);
         h.connected = s.link.isAuthenticated();
         h.digital = s.dashDigital;
         h.nav = s.navActive ? s.navState : null;
@@ -424,6 +460,7 @@ public class DashService extends Service {
             if (!map.isSimulated()) {
                 route.onPosition(l.getLatitude(), l.getLongitude());
                 trips.onLocation(l);
+                Maintenance.onLocation(DashService.this, l);
             }
         };
         try {
@@ -853,6 +890,12 @@ public class DashService extends Service {
             getSystemService(NotificationManager.class).notify(1, buildNotification("Painel conectado"));
             if (media != null) media.resend();
             startGps(); // diário de viagem grava enquanto a moto estiver conectada
+            if (getSharedPreferences("painel", MODE_PRIVATE).getBoolean("auto_role", true) && !trips.isRecording()) {
+                trips.start();
+                autoTrip = true;
+                lostSince = 0;
+                Logger.line("Rolê automático: gravando enquanto o painel estiver conectado");
+            }
             if (dashDigital) {
                 Logger.line("Autenticado com o painel no digital: ligando o mapa");
                 startProjection();
@@ -1302,6 +1345,7 @@ public class DashService extends Service {
         if (wakeLock.isHeld()) wakeLock.release();
         if (wifiLock.isHeld()) wifiLock.release();
         current = null;
+        forceSearch = false;
         super.onDestroy();
     }
 
