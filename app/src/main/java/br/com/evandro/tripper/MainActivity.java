@@ -499,6 +499,14 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this);
         top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         top.setPadding(dp(14), dp(36), dp(14), 0);
+        TextView menuBtn = text("☰", 22, Color.WHITE, true);
+        menuBtn.setGravity(android.view.Gravity.CENTER);
+        menuBtn.setBackground(round(Color.argb(220, 20, 20, 22), 999));
+        menuBtn.setContentDescription("Menu");
+        menuBtn.setOnClickListener(v -> openDrawer());
+        LinearLayout.LayoutParams mbp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        mbp.rightMargin = dp(10);
+        top.addView(menuBtn, mbp);
         LinearLayout turn = new LinearLayout(this);
         turn.setOrientation(LinearLayout.VERTICAL);
         turn.setBackground(round(Color.argb(220, 20, 20, 22), 14));
@@ -561,26 +569,11 @@ public class MainActivity extends Activity {
         });
 
         android.widget.FrameLayout content = new android.widget.FrameLayout(this);
-        android.view.View[] pages = {homePage(), pertoPage(), diarioPage(), ajustesPage(prefs)};
-        for (android.view.View p : pages) content.addView(p, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        content.addView(homePage(), new android.widget.FrameLayout.LayoutParams(-1, -1));
         sheet.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        LinearLayout nav = new LinearLayout(this);
-        nav.setPadding(0, dp(6), 0, 0);
-        String[] names = {"Mapa", "Perto", "Diário", "Ajustes"};
-        TextView[] tabs = new TextView[names.length];
-        for (int i = 0; i < names.length; i++) {
-            // Edição pública básica: só Mapa e Ajustes (Perto e Diário ficam na edição do Evandro).
-            if (BuildConfig.PUBLICO && (i == 1 || i == 2)) continue;
-            final int k = i;
-            TextView t = text(names[i], 13, GRAY, true);
-            t.setGravity(android.view.Gravity.CENTER);
-            t.setPadding(0, dp(10), 0, dp(10));
-            t.setOnClickListener(v -> showTab(k, pages, tabs, prefs));
-            tabs[i] = t;
-            nav.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
-        }
-        sheet.addView(nav);
+        // Sem abas: as outras telas ficam no menu ☰.
+        android.view.View nav = new android.view.View(this);
+        sheet.addView(nav, new LinearLayout.LayoutParams(-1, 0));
         sheetView = sheet;
         sheetContent = content;
         sheetNav = nav;
@@ -588,15 +581,14 @@ public class MainActivity extends Activity {
         android.widget.FrameLayout.LayoutParams sl = new android.widget.FrameLayout.LayoutParams(-1, screenH - mapH + dp(40));
         sl.gravity = android.view.Gravity.BOTTOM;
         root.addView(sheet, sl);
-        int startTab = Math.min(prefs.getInt("aba2", 0), names.length - 1);
-        if (tabs[startTab] == null) startTab = 0;
-        showTab(startTab, pages, tabs, prefs);
+        buildMenu(root, prefs);
         // Android 15 desenha por baixo das barras do sistema: afasta topo e navegação delas.
         sheetFullH = sl.height;
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars()
                     | android.view.WindowInsets.Type.displayCutout());
             top.setPadding(dp(14), bars.top + dp(8), dp(14), 0);
+            applyMenuInsets(bars.top, bars.bottom);
             sheet.setPadding(dp(16), dp(4), dp(16), dp(10) + bars.bottom);
             bottomInset = bars.bottom;
             // 22/11: no Android 15 o teclado cobre a tela; sem isto as sugestões da busca ficavam embaixo dele.
@@ -858,16 +850,23 @@ public class MainActivity extends Activity {
         dlg.show();
     }
 
-    private android.view.View ajustesPage(SharedPreferences prefs) {
+    private LinearLayout maintBox;
+
+    private android.view.View conexaoPage(SharedPreferences prefs) {
         LinearLayout p = column();
-        status = text("", 13, INK, false);
         p.addView(section("Estado"));
+        status = text("", 13, INK, false);
         p.addView(status);
-        p.addView(section("Wi-Fi do painel"));
+        p.addView(section("Conectar"));
+        p.addView(hint("O app acha o Wi-Fi do painel sozinho. Só preencha se o seu painel tiver outro nome ou senha."));
         EditText ssid = field(prefs.getString("ssid", DashService.DEFAULT_SSID), false);
+        ssid.setHint("Nome do Wi-Fi do painel (RE_...)");
         EditText pass = field(prefs.getString("pass", "12345678"), true);
-        p.addView(ssid);
-        p.addView(pass);
+        pass.setHint("Senha");
+        LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(-1, -2);
+        fl.topMargin = dp(8);
+        p.addView(ssid, fl);
+        p.addView(pass, fl);
         p.addView(row(
                 button("Conectar", v -> {
                     String s = ssid.getText().toString().trim();
@@ -883,14 +882,31 @@ public class MainActivity extends Activity {
         }));
         p.addView(toggle("Gravar o rolê sozinho ao conectar", prefs.getBoolean("auto_role", true),
                 on -> prefs.edit().putBoolean("auto_role", on).apply()));
-        p.addView(hint("O rolê gravado vira resumo, vídeo e arquivo GPX na aba Diário."));
-        p.addView(section("Manutenção da moto"));
-        LinearLayout maintBox = column();
+        p.addView(hint("O rolê gravado vira resumo, vídeo e arquivo GPX em Meus rolês."));
+        p.addView(section("No painel"));
+        p.addView(row(
+                button("Mapa no painel", v -> DashService.toggleVideo()),
+                button("Espelhar Waze", v -> askMirror())));
+        p.addView(hint("Espelhar Waze: o app pede para gravar a tela e abre o Waze; o painel mostra o que está no celular."));
+        if (!BuildConfig.PUBLICO) p.addView(row(
+                button("Seta teste", v -> DashService.sendTestArrow()),
+                button("Marcar no log", v -> Logger.line("===== MARCA DO EVANDRO ====="))));
+        return scroll(p);
+    }
+
+    private android.view.View manutencaoPage() {
+        LinearLayout p = column();
+        maintBox = column();
         p.addView(maintBox);
         renderMaintenance(maintBox);
-        p.addView(section("Mapa sem internet"));
+        return scroll(p);
+    }
+
+    private android.view.View offlinePage() {
+        LinearLayout p = column();
         p.addView(hint("Baixe o mapa do seu estado pelo Wi-Fi: depois o mapa funciona mesmo sem sinal. Dá para baixar mais de um."));
         TextView offStatus = text(OfflineMaps.progress(), 13, INK, false);
+        offStatus.setPadding(0, dp(10), 0, dp(4));
         p.addView(offStatus);
         double[] pos = DashService.bikePosition();
         OfflineMaps.Area mine = pos == null ? null : OfflineMaps.here(this, pos[0], pos[1]);
@@ -904,16 +920,29 @@ public class MainActivity extends Activity {
                     .setItems(names, (d, which) -> startOffline(all.get(which), offStatus)).show();
         });
         p.addView(row(pick));
+        return scroll(p);
+    }
+
+    private android.view.View iconePage() {
+        LinearLayout p = column();
+        p.addView(hint("Como a sua moto aparece no mapa do painel e do celular."));
+        p.addView(row(
+                button("Moto", v -> setIcon("moto")),
+                button("Seta", v -> setIcon("seta")),
+                button("Imagem…", v -> startActivityForResult(
+                        new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"), REQ_ICON))));
+        return scroll(p);
+    }
+
+    private android.view.View sobrePage() {
+        LinearLayout p = column();
         p.addView(section("Sobre"));
-        p.addView(hint("New Tripper Dash " + versionName() + ". App gratuito e independente, sem vínculo com a Royal Enfield."));
+        p.addView(text("New Tripper Dash " + versionName(), 15, INK, true));
+        p.addView(hint("App gratuito e independente, sem vínculo com a Royal Enfield. Configure a rota com a moto parada e mantenha a atenção no trânsito."));
         if (!APOIA_URL.isEmpty())
             p.addView(row(button("Apoie o projeto (Apoia.se)", v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(APOIA_URL))))));
-        if (!BuildConfig.PUBLICO) {
-            p.addView(section("Teste de estresse"));
-            p.addView(hint("Com a moto parada: simula um rolê e força CPU, internet, GPS e Wi-Fi ruins (uns 3 min). O resultado sai no Log."));
-            p.addView(row(button("Rodar teste", v -> Logger.line("Estresse: " + DashService.stressTest().trim()))));
-        }
         p.addView(section("Permissões"));
+        p.addView(hint("Se algo não funcionar com o app em segundo plano, confira estas permissões."));
         Button battery = button("Bateria", v -> startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                 Uri.parse("package:" + getPackageName()))));
         // Pública: sem leitor de notificações (ver src/publico/AndroidManifest.xml).
@@ -924,30 +953,202 @@ public class MainActivity extends Activity {
                         Uri.parse("package:" + getPackageName())))),
                 button("Ligações", v -> requestPermissions(new String[]{
                         Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS}, 7))));
-        p.addView(section("Ícone da moto no mapa"));
-        p.addView(row(
-                button("Moto", v -> setIcon("moto")),
-                button("Seta", v -> setIcon("seta")),
-                button("Imagem…", v -> startActivityForResult(
-                        new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"), REQ_ICON))));
-        p.addView(section("Painel (avançado)"));
-        p.addView(row(
-                button("Mapa no painel", v -> DashService.toggleVideo()),
-                button("Espelhar Waze", v -> askMirror())));
-        if (!BuildConfig.PUBLICO) p.addView(row(
-                button("Seta teste", v -> DashService.sendTestArrow()),
-                button("Marcar no log", v -> Logger.line("===== MARCA DO EVANDRO ====="))));
+        if (!BuildConfig.PUBLICO) {
+            p.addView(section("Teste de estresse"));
+            p.addView(hint("Com a moto parada: simula um rolê e força CPU, internet, GPS e Wi-Fi ruins (uns 3 min). O resultado sai no Log."));
+            p.addView(row(button("Rodar teste", v -> Logger.line("Estresse: " + DashService.stressTest().trim()))));
+        }
         logView = text("", 10, Color.rgb(40, 120, 60), false);
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setVisibility(android.view.View.GONE);
-        TextView showLog = text("Ver log", 13, ORANGE, true);
-        showLog.setPadding(0, dp(14), 0, dp(6));
+        TextView showLog = text("Ver registro (log)", 13, ORANGE, true);
+        showLog.setPadding(0, dp(18), 0, dp(6));
         showLog.setOnClickListener(v -> logView.setVisibility(logView.getVisibility() == android.view.View.VISIBLE
                 ? android.view.View.GONE : android.view.View.VISIBLE));
         p.addView(showLog);
         p.addView(logView);
         scroll = (ScrollView) scroll(p);
         return scroll;
+    }
+
+    // ---------------- menu lateral e telas ----------------
+    private final java.util.Map<String, android.view.View> pages = new java.util.HashMap<>();
+    private android.widget.FrameLayout pageOverlay, pageHost;
+    private LinearLayout drawer, drawerHeader, pageHeader;
+    private TextView pageTitle, drawerStatus;
+    private android.view.View scrim;
+    private int drawerW;
+    private boolean drawerOpen;
+
+    private void buildMenu(android.widget.FrameLayout root, SharedPreferences prefs) {
+        pages.put("perto", pertoPage());
+        pages.put("diario", diarioPage());
+        pages.put("manutencao", manutencaoPage());
+        pages.put("conexao", conexaoPage(prefs));
+        pages.put("offline", offlinePage());
+        pages.put("icone", iconePage());
+        pages.put("sobre", sobrePage());
+
+        scrim = new android.view.View(this);
+        scrim.setBackgroundColor(Color.argb(150, 0, 0, 0));
+        scrim.setAlpha(0);
+        scrim.setVisibility(android.view.View.GONE);
+        scrim.setOnClickListener(v -> closeDrawer());
+        root.addView(scrim, new android.widget.FrameLayout.LayoutParams(-1, -1));
+
+        drawerW = Math.min(dp(320), (int) (getResources().getDisplayMetrics().widthPixels * 0.84f));
+        drawer = new LinearLayout(this);
+        drawer.setOrientation(LinearLayout.VERTICAL);
+        android.graphics.drawable.GradientDrawable dbg = new android.graphics.drawable.GradientDrawable();
+        dbg.setColor(Color.WHITE);
+        float rr = dp(24);
+        dbg.setCornerRadii(new float[]{0, 0, rr, rr, rr, rr, 0, 0});
+        drawer.setBackground(dbg);
+        drawer.setClickable(true);
+
+        drawerHeader = new LinearLayout(this);
+        drawerHeader.setOrientation(LinearLayout.VERTICAL);
+        drawerHeader.setBackground(round(Color.rgb(28, 28, 32), 0));
+        drawerHeader.setPadding(dp(20), dp(28), dp(20), dp(20));
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        drawerHeader.addView(logo, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        TextView appName = text("New Tripper Dash", 20, Color.WHITE, true);
+        appName.setPadding(0, dp(12), 0, 0);
+        drawerHeader.addView(appName);
+        drawerStatus = text("Painel desligado", 13, Color.rgb(214, 214, 214), false);
+        drawerStatus.setPadding(0, dp(4), 0, 0);
+        drawerHeader.addView(drawerStatus);
+        drawer.addView(drawerHeader, new LinearLayout.LayoutParams(-1, -2));
+
+        ScrollView list = new ScrollView(this);
+        LinearLayout items = column();
+        items.setPadding(0, dp(8), 0, dp(8));
+        items.addView(menuItem("📍", "Perto de mim", "Postos, comida e estacionamento", () -> openPage("perto", "Perto de mim")));
+        items.addView(menuItem("📒", "Meus rolês", "Gravar, ver resumo, vídeo e GPX", () -> openPage("diario", "Meus rolês")));
+        items.addView(menuItem("🔧", "Manutenção", "Óleo, corrente, pneus e revisão", () -> openPage("manutencao", "Manutenção")));
+        items.addView(menuItem("📶", "Painel da moto", "Conexão, automático e Waze", () -> openPage("conexao", "Painel da moto")));
+        items.addView(menuItem("📥", "Mapas offline", "Baixar o mapa do estado", () -> openPage("offline", "Mapas offline")));
+        items.addView(menuItem("🏍", "Ícone da moto", "Moto, seta ou a sua imagem", () -> openPage("icone", "Ícone da moto")));
+        android.view.View div = new android.view.View(this);
+        div.setBackgroundColor(Color.rgb(236, 236, 236));
+        LinearLayout.LayoutParams dv = new LinearLayout.LayoutParams(-1, dp(1));
+        dv.setMargins(dp(20), dp(6), dp(20), dp(6));
+        items.addView(div, dv);
+        items.addView(menuItem("⚙", "Sobre e permissões", "Versão, bateria e localização", () -> openPage("sobre", "Sobre e permissões")));
+        list.addView(items);
+        drawer.addView(list, new LinearLayout.LayoutParams(-1, 0, 1));
+        drawer.setTranslationX(-drawerW);
+        drawer.setVisibility(android.view.View.GONE);
+        root.addView(drawer, new android.widget.FrameLayout.LayoutParams(drawerW, -1));
+
+        pageOverlay = new android.widget.FrameLayout(this);
+        pageOverlay.setBackgroundColor(Color.WHITE);
+        pageOverlay.setClickable(true);
+        pageOverlay.setVisibility(android.view.View.GONE);
+        LinearLayout col = column();
+        pageHeader = new LinearLayout(this);
+        pageHeader.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView back = text("←", 26, INK, true);
+        back.setGravity(android.view.Gravity.CENTER);
+        back.setContentDescription("Voltar");
+        back.setOnClickListener(v -> closePage());
+        pageHeader.addView(back, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        pageTitle = text("", 19, INK, true);
+        pageHeader.addView(pageTitle, new LinearLayout.LayoutParams(0, dp(56), 1));
+        pageTitle.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        col.addView(pageHeader, new LinearLayout.LayoutParams(-1, -2));
+        android.view.View hair = new android.view.View(this);
+        hair.setBackgroundColor(Color.rgb(236, 236, 236));
+        col.addView(hair, new LinearLayout.LayoutParams(-1, dp(1)));
+        pageHost = new android.widget.FrameLayout(this);
+        pageHost.setPadding(dp(16), 0, dp(16), dp(8));
+        col.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1));
+        pageOverlay.addView(col, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        root.addView(pageOverlay, new android.widget.FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void applyMenuInsets(int top, int bottom) {
+        if (pageHeader == null) return;
+        pageHeader.setPadding(0, top, 0, 0);
+        pageHost.setPadding(dp(16), 0, dp(16), bottom + dp(8));
+        drawerHeader.setPadding(dp(20), top + dp(24), dp(20), dp(20));
+        drawer.setPadding(0, 0, 0, bottom);
+    }
+
+    private android.view.View menuItem(String icon, String title, String sub, Runnable action) {
+        LinearLayout r = new LinearLayout(this);
+        r.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(20), dp(13), dp(20), dp(13));
+        android.util.TypedValue tv = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tv, true);
+        r.setBackgroundResource(tv.resourceId);
+        TextView ic = text(icon, 22, INK, false);
+        ic.setGravity(android.view.Gravity.CENTER);
+        r.addView(ic, new LinearLayout.LayoutParams(dp(40), -2));
+        LinearLayout col = column();
+        col.addView(text(title, 16, INK, true));
+        col.addView(text(sub, 12, GRAY, false));
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, -2, 1);
+        cl.leftMargin = dp(12);
+        r.addView(col, cl);
+        r.addView(text("›", 22, Color.rgb(190, 190, 190), false));
+        r.setOnClickListener(v -> action.run());
+        return r;
+    }
+
+    private void openDrawer() {
+        if (drawerOpen) return;
+        drawerOpen = true;
+        hideKeyboard(drawer);
+        scrim.setVisibility(android.view.View.VISIBLE);
+        drawer.setVisibility(android.view.View.VISIBLE);
+        scrim.animate().alpha(1).setDuration(180).start();
+        drawer.animate().translationX(0).setDuration(220).start();
+    }
+
+    private void closeDrawer() {
+        if (!drawerOpen) return;
+        drawerOpen = false;
+        scrim.animate().alpha(0).setDuration(160).withEndAction(() -> {
+            if (!drawerOpen) scrim.setVisibility(android.view.View.GONE);
+        }).start();
+        drawer.animate().translationX(-drawerW).setDuration(200).withEndAction(() -> {
+            if (!drawerOpen) drawer.setVisibility(android.view.View.GONE);
+        }).start();
+    }
+
+    private void openPage(String key, String title) {
+        closeDrawer();
+        android.view.View v = pages.get(key);
+        if (v == null) return;
+        if (v.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) v.getParent()).removeView(v);
+        pageHost.removeAllViews();
+        pageHost.addView(v, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        pageTitle.setText(title);
+        pageOverlay.setVisibility(android.view.View.VISIBLE);
+        pageOverlay.setAlpha(0);
+        pageOverlay.animate().alpha(1).setDuration(160).start();
+        if ("diario".equals(key)) showTripsLater();
+        if ("manutencao".equals(key) && maintBox != null) renderMaintenance(maintBox);
+    }
+
+    private void closePage() {
+        if (pageOverlay == null || pageOverlay.getVisibility() != android.view.View.VISIBLE) return;
+        hideKeyboard(pageOverlay);
+        pageOverlay.animate().alpha(0).setDuration(140).withEndAction(() -> {
+            if (pageOverlay.getAlpha() == 0f) {
+                pageOverlay.setVisibility(android.view.View.GONE);
+                pageHost.removeAllViews();
+            }
+        }).start();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (pageOverlay != null && pageOverlay.getVisibility() == android.view.View.VISIBLE) closePage();
+        else if (drawerOpen) closeDrawer();
+        else super.onBackPressed();
     }
 
     /** Botão "Ligar com a moto": liga o serviço e conecta no Wi-Fi do painel (RE_...) sozinho. */
@@ -981,6 +1182,7 @@ public class MainActivity extends Activity {
             statusPill.setText("⏻ Ligar com a moto");
             statusPill.setTextColor(Color.WHITE);
         }
+        if (drawerStatus != null) drawerStatus.setText(statusPill.getText());
         if (h.nav != null) {
             NavState n = h.nav;
             turnDist.setText(n.metersToTurn >= 1000 ? String.format(java.util.Locale.ROOT, "%.1f km", n.metersToTurn / 1000.0) : n.metersToTurn + " m");
@@ -990,7 +1192,7 @@ public class MainActivity extends Activity {
                     n.eta.length() >= 4 ? n.eta.substring(0, 2) : "--", n.eta.length() >= 4 ? n.eta.substring(2, 4) : "--"));
         } else {
             turnDist.setText(h.dest != null ? "Calculando…" : "Sem rota");
-            turnStreet.setText(h.dest != null ? "" : "Toque em Perto para escolher");
+            turnStreet.setText(h.dest != null ? "" : "Escolha o destino abaixo");
             tileLeft.setText("—");
             destMeta.setText("");
         }
